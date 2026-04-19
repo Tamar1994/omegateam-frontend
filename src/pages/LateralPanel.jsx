@@ -62,16 +62,37 @@ export function LateralPanel() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        console.log('📱 Página escondida - liberando Wake Lock');
         setTelaAtiva(false);
+        liberarWakeLock();
       } else {
+        console.log('📱 Página visível - ativando Wake Lock');
         setTelaAtiva(true);
         iniciarWakeLock();
       }
     };
 
+    // Monitorar se Wake Lock é liberado pelo navegador
+    const handleWakeLockRelease = () => {
+      console.warn('⚠️ Wake Lock foi liberado pelo navegador');
+      wakeLock.current = null;
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if (wakeLock.current) {
+      wakeLock.current.addEventListener('release', handleWakeLockRelease);
+    }
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock.current) {
+        try {
+          wakeLock.current.removeEventListener('release', handleWakeLockRelease);
+        } catch (e) {
+          // Ignore
+        }
+      }
     };
   }, []);
 
@@ -80,11 +101,27 @@ export function LateralPanel() {
   // ==========================================
 
   const conectarWebSocket = (email) => {
+    // Validação: campId não pode estar vazio
+    if (!campId) {
+      console.error('❌ Erro: campId não foi recebido. URL:', window.location.pathname);
+      setStatus('erro_conexao');
+      setConectado(false);
+      return;
+    }
+
+    if (!email) {
+      console.error('❌ Erro: email do usuário não está disponível');
+      setStatus('erro_conexao');
+      setConectado(false);
+      return;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
     const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/lateral/${campId}/${email}`;
 
     console.log('🔗 Conectando WebSocket:', wsUrl);
+    console.log('📍 Dados:', { campId, email, protocol, baseUrl });
 
     ws.current = new WebSocket(wsUrl);
 
@@ -111,16 +148,26 @@ export function LateralPanel() {
 
     ws.current.onerror = (error) => {
       console.error('❌ Erro WebSocket:', error);
+      console.error('Estado WebSocket:', ws.current?.readyState);
+      console.error('URL tentada:', ws.current?.url);
       setConectado(false);
       setStatus('erro_conexao');
     };
 
-    ws.current.onclose = () => {
-      console.log('❌ WebSocket desconectado');
+    ws.current.onclose = (event) => {
+      console.log('❌ WebSocket desconectado', { 
+        code: event.code, 
+        reason: event.reason, 
+        wasClean: event.wasClean 
+      });
       setConectado(false);
       setStatus('desconectado');
-      // Tentar reconectar em 3 segundos
-      setTimeout(() => conectarWebSocket(email), 3000);
+      
+      // Tentar reconectar em 3 segundos se não foi fechado normalmente
+      if (!event.wasClean) {
+        console.log('🔄 Tentando reconectar em 3 segundos...');
+        setTimeout(() => conectarWebSocket(email), 3000);
+      }
     };
   };
 
@@ -178,12 +225,30 @@ export function LateralPanel() {
      * Evita que o telemóvel escureça ou bloqueie
      */
     try {
-      if ('wakeLock' in navigator && telaAtiva) {
-        wakeLock.current = await navigator.wakeLock.request('screen');
-        console.log('✅ Wake Lock ativado - tela não vai escurecer');
+      if (!('wakeLock' in navigator)) {
+        console.warn('⚠️ Wake Lock não suportado por este navegador');
+        return;
       }
+
+      if (!telaAtiva) {
+        console.warn('⚠️ Tela não está ativa, não posso ativar Wake Lock');
+        return;
+      }
+
+      // Se já tem um Wake Lock, libera antes
+      if (wakeLock.current) {
+        try {
+          await wakeLock.current.release();
+        } catch (e) {
+          console.warn('⚠️ Erro ao liberar Wake Lock anterior:', e);
+        }
+      }
+
+      wakeLock.current = await navigator.wakeLock.request('screen');
+      console.log('✅ Wake Lock ativado - tela não vai escurecer');
     } catch (err) {
-      console.warn('⚠️ Wake Lock não suportado:', err);
+      console.error('❌ Erro ao ativar Wake Lock:', err.message, err.name);
+      wakeLock.current = null;
     }
   };
 
