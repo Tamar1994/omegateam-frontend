@@ -96,16 +96,31 @@ export function MesarioPanel() {
     if (!quadraAberta || !lutaAtual || lutaAtual.modalidade === 'Poomsae') return;
 
     const conectarJoystickWebSocket = () => {
+      // Validação
+      if (!id || !minhaQuadra?.numero_quadra) {
+        console.error('❌ Erro: id ou numero_quadra não disponível');
+        return;
+      }
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${id}/${minhaQuadra?.numero_quadra}`;
+      
+      // URL-encode seguro (luta_id pode ter caracteres especiais)
+      const lutaIdCodificado = encodeURIComponent(id);
+      const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${lutaIdCodificado}/${minhaQuadra.numero_quadra}`;
 
       console.log('🔗 Conectando WebSocket Mesário:', wsUrl);
+      console.log('📍 Dados:', { id, lutaIdCodificado, numero_quadra: minhaQuadra.numero_quadra });
 
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
         console.log('✅ WebSocket Mesário conectado');
+      };
+
+      ws.current.onerror = (error) => {
+        console.error('❌ Erro WebSocket Mesário:', error);
+        console.error('URL tentada:', wsUrl);
       };
 
       ws.current.onmessage = (event) => {

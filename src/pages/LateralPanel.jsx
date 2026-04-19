@@ -118,10 +118,13 @@ export function LateralPanel() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-    const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/lateral/${campId}/${email}`;
+    
+    // ⚠️ IMPORTANTE: URL-encode o email para evitar problemas com @
+    const emailCodificado = encodeURIComponent(email);
+    const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/lateral/${campId}/${emailCodificado}`;
 
     console.log('🔗 Conectando WebSocket:', wsUrl);
-    console.log('📍 Dados:', { campId, email, protocol, baseUrl });
+    console.log('📍 Dados:', { campId, email, emailCodificado, protocol, baseUrl });
 
     ws.current = new WebSocket(wsUrl);
 
