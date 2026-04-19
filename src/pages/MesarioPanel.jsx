@@ -74,14 +74,6 @@ export function MesarioPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuarioLogado, quadraAberta, id]);
 
-  const simularReady = async (slot, isReady) => {
-    await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/ready`, {
-      method: 'PUT', headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lateral_slot: slot, is_ready: isReady })
-    });
-    carregarMinhaQuadra(); 
-  };
-
   const todosProntos = () => {
     if (!minhaQuadra) return false;
     
@@ -432,9 +424,6 @@ export function MesarioPanel() {
                       <span className={`font-black uppercase tracking-wider text-sm ${isReady ? 'text-green-500' : 'text-yellow-500'}`}>
                         {isReady ? t('pronto') : t('aguardando')}
                       </span>
-                      <button onClick={() => simularReady(`lateral${i}`, !isReady)} className="bg-gray-700 hover:bg-gray-600 text-xs px-3 py-1 rounded">
-                        {isReady ? t('desfazer') : t('simular_ready')}
-                      </button>
                     </div>
                   </div>
                 );
