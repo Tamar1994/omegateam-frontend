@@ -8,4 +8,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    middlewareMode: false,
+    fallback: 'index.html',
+  },
 })
