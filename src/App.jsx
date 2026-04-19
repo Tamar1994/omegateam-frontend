@@ -56,7 +56,7 @@ function App() {
         <Route path="/scoreboard" element={<ScoreboardAccess />} />
         
         {/* Rota do Scoreboard TV com Token */}
-        <Route path="/scoreboard-tv/:luta_id/:numero_quadra" element={<ScoreboardTVToken />} />
+        <Route path="/scoreboard-tv/:numero_quadra" element={<ScoreboardTVToken />} />
       </Routes>
     </BrowserRouter>
   );

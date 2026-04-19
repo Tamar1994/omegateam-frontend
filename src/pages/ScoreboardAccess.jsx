@@ -53,8 +53,8 @@ export function ScoreboardAccess() {
       const data = await response.json();
       
       // ✅ Token válido - redirecionar para Scoreboard
-      navigate(`/scoreboard-tv/${data.luta_id}/${data.numero_quadra}`, {
-        state: { token, acesso_autorizado: true }
+      navigate(`/scoreboard-tv/${data.numero_quadra}`, {
+        state: { token, acesso_autorizado: true, campeonato_id: data.campeonato_id }
       });
     } catch (err) {
       console.error('Erro ao validar token:', err);

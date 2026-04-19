@@ -58,7 +58,13 @@ export function MesarioPanel() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/minha-quadra/${usuarioLogado.email}`);
       if (res.ok) {
-        setMinhaQuadra(await res.json());
+        const quadraData = await res.json();
+        setMinhaQuadra(quadraData);
+        // 📺 SALVAR TOKEN DA QUADRA
+        if (quadraData.token_scoreboard) {
+          setTokenScoreboard(quadraData.token_scoreboard);
+          console.log('📺 Token Scoreboard da Quadra:', quadraData.token_scoreboard);
+        }
       } else {
         const err = await res.json();
         setErroAcesso(err.detail);
@@ -219,12 +225,6 @@ export function MesarioPanel() {
         const dadosLuta = await res.json();
         setLutaAtual(dadosLuta);
         
-        // 📺 SALVAR TOKEN DO SCOREBOARD
-        if (dadosLuta.token_scoreboard) {
-          setTokenScoreboard(dadosLuta.token_scoreboard);
-          console.log('📺 Token Scoreboard:', dadosLuta.token_scoreboard);
-        }
-        
         let tempoCalculado = 60;
         const cat = (dadosLuta.nome_categoria || "").toLowerCase();
         
@@ -299,9 +299,6 @@ export function MesarioPanel() {
       } catch (err) {
         console.error('❌ Erro ao notificar fim de luta:', err);
       }
-      
-      // 📺 LIMPAR TOKEN
-      setTokenScoreboard(null);
       
       puxarProximaLuta(); 
     } catch {
