@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* Definindo as cores da Omega Team no novo padrão do Tailwind v4 */
+@theme {
+  --color-omega-red: #cc0000;
+  --color-omega-dark: #1a1a1a;
+}
+
+body {
+  background-color: #f3f4f6;
+}
