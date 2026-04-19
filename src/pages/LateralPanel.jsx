@@ -355,6 +355,7 @@ export function LateralPanel() {
     
     ws.current.send(JSON.stringify({
       tipo: 'lateral_pronto',
+      luta_id: luta?.id,  // ✅ Enviar luta_id se disponível (após receber notificação)
       email: usuario.email,
       timestamp: new Date().toISOString()
     }));
@@ -403,6 +404,7 @@ export function LateralPanel() {
     const dados = {
       tipo_ponto,
       cor,
+      luta_id: luta?.id,  // ✅ IMPORTANTE: Enviar luta_id para o backend identificar qual luta
       timestamp: new Date().toISOString(),
       lateral_email: usuario?.email
     };
