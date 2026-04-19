@@ -1,265 +1,468 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShieldAlert, CheckCircle, Clock, Send, MinusCircle, PlusCircle, Smartphone } from 'lucide-react';
-import { API_BASE_URL } from '../services/api';
+import { ArrowLeft } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
 
+/**
+ * LateralPanel - Painel do Árbitro Lateral (Joystick)
+ * 
+ * Funcionalidades Avançadas:
+ * ✅ WebSocket para comunicação em tempo real
+ * ✅ Haptic Feedback (vibração do telemóvel)
+ * ✅ Wake Lock API (evita escurecer a tela)
+ * ✅ Prevenção de duplos cliques (debounce)
+ * ✅ Validação por Janela de Coincidência
+ */
 export function LateralPanel() {
-  const { id } = useParams();
-  const navigate = useNavigate();
   const { t } = useTranslation();
-
-  const [usuarioLogado, setUsuarioLogado] = useState(null);
-  const [minhaQuadra, setMinhaQuadra] = useState(null);
-  const [meuSlot, setMeuSlot] = useState(null); // Ex: "lateral1"
-  const [isReady, setIsReady] = useState(false);
-  
-  const [lutaAtual, setLutaAtual] = useState(null);
-
-  // Estados de Avaliação (Poomsae)
-  const [precisao, setPrecisao] = useState(4.0);
-  const [apresentacao, setApresentacao] = useState(6.0);
-  const [poomsaeEnviado, setPoomsaeEnviado] = useState(false);
+  const { campId } = useParams();
+  const navigate = useNavigate();
 
   // ==========================================
-  // 1. CARREGAMENTO E IDENTIFICAÇÃO DO JUIZ
+  // ESTADOS
   // ==========================================
-  useEffect(() => {
-    const userStr = localStorage.getItem('usuarioOmegaTeam');
-    if (userStr) setUsuarioLogado(JSON.parse(userStr));
-    else navigate('/login');
-  }, [navigate]);
+  const [usuario, setUsuario] = useState(null);
+  const [luta, setLuta] = useState(null);
+  const [conectado, setConectado] = useState(false);
+  const [status, setStatus] = useState('conectando');
+  const [ultimos_cliques, setUltimosCliques] = useState([]);
+  const [bloqueado, setBloqueado] = useState(false); // Prevenção de duplos cliques
+  const [telaAtiva, setTelaAtiva] = useState(true); // Wake Lock
 
+  // ==========================================
+  // REFS
+  // ==========================================
+  const ws = useRef(null);
+  const wakeLock = useRef(null);
+  const ultimoClique = useRef(0); // Timestamp do último clique
+
+  // ==========================================
+  // EFEITOS
+  // ==========================================
+
+  // 1. Carregar usuário e conectar WebSocket
   useEffect(() => {
-    if (!usuarioLogado) return;
-    const carregarQuadra = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/minha-quadra/${usuarioLogado.email}`);
-        if (res.ok) {
-          const quadra = await res.json();
-          setMinhaQuadra(quadra);
-          
-          // Descobre qual Lateral eu sou
-          for (let i = 1; i <= 5; i++) {
-            if (quadra[`lateral${i}_email`] === usuarioLogado.email) {
-              setMeuSlot(`lateral${i}`);
-              setIsReady(quadra[`lateral${i}_ready`]);
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        console.error(t('erro_buscar_quadra'));
+    const usuarioSalvo = JSON.parse(localStorage.getItem('usuarioOmegaTeam') || '{}');
+    setUsuario(usuarioSalvo);
+
+    if (usuarioSalvo.email && campId) {
+      conectarWebSocket(usuarioSalvo.email);
+      iniciarWakeLock();
+    }
+
+    return () => {
+      if (ws.current) {
+        ws.current.close();
       }
+      liberarWakeLock();
     };
-    carregarQuadra();
-  }, [usuarioLogado, id, t]);
+  }, [campId]);
 
-  // ==========================================
-  // 2. POLLING DA LUTA ATUAL (A cada 2 segundos)
-  // ==========================================
+  // 2. Monitorar visibilidade da página para Wake Lock
   useEffect(() => {
-    if (!isReady || !minhaQuadra) return;
-    
-    const buscarLuta = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/luta-atual`);
-        if (res.ok) {
-          const luta = await res.json();
-          // Se mudou a luta, reseta o painel de Poomsae
-          if (lutaAtual && lutaAtual._id !== luta._id) {
-             setPrecisao(4.0);
-             setApresentacao(6.0);
-             setPoomsaeEnviado(false);
-          }
-          setLutaAtual(luta);
-        } else {
-          setLutaAtual(null); // Nenhuma luta ativa
-        }
-      } catch (e) {
-        setLutaAtual(null);
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTelaAtiva(false);
+      } else {
+        setTelaAtiva(true);
+        iniciarWakeLock();
       }
     };
 
-    buscarLuta();
-    const intervalo = setInterval(buscarLuta, 2000);
-    return () => clearInterval(intervalo);
-  }, [isReady, minhaQuadra, id, lutaAtual, t]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // ==========================================
-  // 3. AÇÕES DO JOYSTICK
+  // WEBSOCKET
   // ==========================================
-  const marcarReady = async () => {
+
+  const conectarWebSocket = (email) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/lateral/${campId}/${email}`;
+
+    console.log('🔗 Conectando WebSocket:', wsUrl);
+
+    ws.current = new WebSocket(wsUrl);
+
+    ws.current.onopen = () => {
+      console.log('✅ WebSocket conectado');
+      setConectado(true);
+      setStatus('pronto');
+    };
+
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('📨 Mensagem recebida:', data);
+
+      if (data.status === 'clique_recebido') {
+        // Vibração curta para confirmar recebimento
+        fazerVibracaoSimples();
+      } else if (data.status === 'ponto_validado') {
+        // Vibração forte para ponto validado
+        fazerVibracaoLonga();
+        setStatus('ponto_validado');
+        setTimeout(() => setStatus('pronto'), 2000);
+      }
+    };
+
+    ws.current.onerror = (error) => {
+      console.error('❌ Erro WebSocket:', error);
+      setConectado(false);
+      setStatus('erro_conexao');
+    };
+
+    ws.current.onclose = () => {
+      console.log('❌ WebSocket desconectado');
+      setConectado(false);
+      setStatus('desconectado');
+      // Tentar reconectar em 3 segundos
+      setTimeout(() => conectarWebSocket(email), 3000);
+    };
+  };
+
+  // ==========================================
+  // HAPTIC FEEDBACK (Vibração)
+  // ==========================================
+
+  const fazerVibracaoSimples = () => {
+    /**
+     * Vibração curta para confirmação de clique
+     * Padrão: 50ms de vibração
+     */
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+  };
+
+  const fazerVibracaoMedia = () => {
+    /**
+     * Vibração média para ponto normal (+1)
+     * Padrão: 100ms
+     */
+    if (navigator.vibrate) {
+      navigator.vibrate(100);
+    }
+  };
+
+  const fazerVibracaoForte = () => {
+    /**
+     * Vibração forte para pontos altos (+2, +3)
+     * Padrão: padrão de dois pulsos (200ms, pausa, 100ms)
+     */
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 100]);
+    }
+  };
+
+  const fazerVibracaoLonga = () => {
+    /**
+     * Vibração longa para validação de ponto
+     * Padrão: 500ms
+     */
+    if (navigator.vibrate) {
+      navigator.vibrate(500);
+    }
+  };
+
+  // ==========================================
+  // WAKE LOCK API
+  // ==========================================
+
+  const iniciarWakeLock = async () => {
+    /**
+     * Mantém a tela acesa durante o jogo
+     * Evita que o telemóvel escureça ou bloqueie
+     */
     try {
-      await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/ready`, {
-        method: 'PUT', headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lateral_slot: meuSlot, is_ready: true })
-      });
-      setIsReady(true);
-    } catch (e) {
-      alert(t('erro_sincronizar'));
+      if ('wakeLock' in navigator && telaAtiva) {
+        wakeLock.current = await navigator.wakeLock.request('screen');
+        console.log('✅ Wake Lock ativado - tela não vai escurecer');
+      }
+    } catch (err) {
+      console.warn('⚠️ Wake Lock não suportado:', err);
     }
   };
 
-  const enviarPontoKyorugui = (cor, pontos) => {
-    // Em um sistema real com WebSockets, isso iria direto para a Janela de Coincidência.
-    // Como estamos no MVP, vamos dar um feedback visual (vibrar o telemóvel).
-    if (navigator.vibrate) navigator.vibrate(50);
-    console.log(`Enviado +${pontos} para o ${cor}`);
-    
-    // Animação visual rápida
-    const btn = document.getElementById(`btn-${cor}-${pontos}`);
-    if(btn) {
-      btn.classList.add('scale-95', 'brightness-150');
-      setTimeout(() => btn.classList.remove('scale-95', 'brightness-150'), 150);
-    }
-  };
-
-  const enviarNotaPoomsae = () => {
-    if (window.confirm(t('confirmar_nota_final', { valor: (precisao + apresentacao).toFixed(2) }))) {
-      setPoomsaeEnviado(true);
-      // Aqui faríamos o POST para o banco de dados salvar a nota deste juiz
-      alert(t('nota_enviada_mesa_central'));
+  const liberarWakeLock = () => {
+    /**
+     * Libera o Wake Lock permitindo o telemóvel voltar ao normal
+     */
+    if (wakeLock.current) {
+      wakeLock.current.release();
+      wakeLock.current = null;
+      console.log('❌ Wake Lock desativado');
     }
   };
 
   // ==========================================
-  // RENDERIZAÇÃO: TELAS
+  // PREVENÇÃO DE DUPLOS CLIQUES
   // ==========================================
-  if (!minhaQuadra || !meuSlot) {
-    return <div className="min-h-screen bg-black flex items-center justify-center text-white p-6 text-center">{t('conectando_servidor_quadra')}</div>;
-  }
 
-  // TELA 1: CHECK-IN (LOBBY)
-  if (!isReady) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center text-white p-6">
-        <Smartphone size={80} className="text-blue-500 mb-6 animate-bounce" />
-        <h1 className="text-3xl font-black mb-2 text-center">{t('sincronizar_joystick')}</h1>
-        <p className="text-gray-400 text-center mb-12">{t('voce_escalado_como_juiz_lateral', { funcao: meuSlot.replace('lateral', `${t('juiz_lateral')} `) })} {t('quadra_label')} {minhaQuadra.numero_quadra}.</p>
-        
-        <button onClick={marcarReady} className="w-full max-w-sm bg-green-600 hover:bg-green-500 text-white py-6 rounded-2xl font-black text-2xl uppercase tracking-widest shadow-[0_0_40px_rgba(22,163,74,0.4)] transition-all flex flex-col items-center gap-2">
-          <CheckCircle size={32} /> {t('estou_pronto')}
-        </button>
-      </div>
-    );
-  }
+  const podeEnviarClique = () => {
+    /**
+     * Bloqueia cliques duplos dentro de 200ms
+     * Evita tremores acidentais do dedo
+     */
+    const agora = Date.now();
+    if (agora - ultimoClique.current < 200) {
+      return false; // Clique muito rápido
+    }
+    ultimoClique.current = agora;
+    return true;
+  };
 
-  // TELA 2: AGUARDANDO LUTA (STANDBY)
-  if (!lutaAtual) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white p-6">
-        <Clock size={60} className="text-gray-600 mb-6 animate-pulse" />
-        <h2 className="text-2xl font-bold text-gray-500 text-center uppercase tracking-widest">{t('aguardando_mesario')}</h2>
-        <p className="text-gray-600 mt-2 text-center">{t('tela_ativada_automaticamente')}</p>
-      </div>
-    );
-  }
+  // ==========================================
+  // ENVIAR CLIQUE VIA WEBSOCKET
+  // ==========================================
 
-  // TELA 3: JOYSTICK POOMSAE
-  if (lutaAtual.modalidade === 'Poomsae') {
-    return (
-      <div className="min-h-screen bg-slate-900 text-white font-sans flex flex-col select-none touch-manipulation">
-        <header className="bg-slate-950 p-4 border-b border-slate-800 text-center">
-          <p className="text-blue-400 font-bold uppercase text-sm mb-1">{t('juiz_lateral_numero_quadra', { numero: meuSlot.replace('lateral', ''), quadra: minhaQuadra.numero_quadra })}</p>
-          <h1 className="text-xl font-black truncate">{lutaAtual.atleta?.split(' (')[0] || t('apresentacao_poomsae')}</h1>
-        </header>
+  const enviarClique = async (tipo_ponto, cor) => {
+    /**
+     * Envia clique do árbitro via WebSocket
+     * 
+     * tipo_ponto: "+1", "+2", "+3"
+     * cor: "vermelho" ou "azul"
+     */
 
-        {poomsaeEnviado ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <CheckCircle size={80} className="text-green-500 mb-6" />
-            <h2 className="text-3xl font-black text-white mb-2">{t('nota_registrada')}</h2>
-            <p className="text-slate-400">{t('aguarde_proxima_apresentacao')}</p>
+    // Validação 1: Prevenção de duplos cliques
+    if (!podeEnviarClique()) {
+      console.warn('⚠️ Clique bloqueado - muitos cliques muito rápido');
+      fazerVibracaoSimples(); // Feedback de rejeição
+      return;
+    }
+
+    // Validação 2: WebSocket conectado
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setStatus('erro_conexao');
+      return;
+    }
+
+    // Bloquear novos cliques por 200ms
+    setBloqueado(true);
+    setTimeout(() => setBloqueado(false), 200);
+
+    // Vibração apropriada
+    const pontos = parseInt(tipo_ponto.substring(1));
+    if (pontos === 1) {
+      fazerVibracaoMedia();
+    } else {
+      fazerVibracaoForte();
+    }
+
+    // Enviar via WebSocket
+    const dados = {
+      tipo_ponto,
+      cor,
+      timestamp: new Date().toISOString(),
+      lateral_email: usuario?.email
+    };
+
+    console.log('📤 Enviando clique:', dados);
+    ws.current.send(JSON.stringify(dados));
+
+    // Atualizar feedback visual
+    setUltimosCliques([{ ...dados, id: Date.now() }, ...ultimos_cliques.slice(0, 4)]);
+    setStatus('enviado');
+    setTimeout(() => setStatus('pronto'), 1000);
+  };
+
+  // ==========================================
+  // RENDERIZAÇÃO
+  // ==========================================
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white font-sans">
+      {/* Header */}
+      <div className="bg-black/50 border-b border-omega-red/30 p-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 hover:text-omega-red transition"
+          >
+            <ArrowLeft size={20} /> {t('voltar_inicio')}
+          </button>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-omega-red">
+              {t('juiz_lateral')}
+            </h1>
+            <p className="text-gray-400 text-sm">{usuario?.email}</p>
           </div>
-        ) : (
-          <main className="flex-1 p-4 flex flex-col gap-6">
-            
-            {/* Bloco de Precisão (Deduções) */}
-            <div className="bg-slate-800 rounded-2xl p-6 border-2 border-slate-700 shadow-xl flex-1 flex flex-col">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-slate-400 font-bold uppercase tracking-wider">{t('precisao')} (4.0)</span>
-                <span className="text-4xl font-black text-red-400">{precisao.toFixed(1)}</span>
-              </div>
-              <div className="flex gap-4 flex-1">
-                <button onClick={() => setPrecisao(p => Math.max(0, p - 0.3))} className="flex-1 bg-red-900/30 border-2 border-red-800 rounded-xl flex flex-col items-center justify-center text-red-400 active:bg-red-900/60 transition-colors">
-                  <MinusCircle size={32} className="mb-2"/> <span className="font-black text-2xl">-0.3</span> <span className="text-xs font-bold uppercase mt-1">{t('erro_maior')}</span>
-                </button>
-                <button onClick={() => setPrecisao(p => Math.max(0, p - 0.1))} className="flex-1 bg-orange-900/30 border-2 border-orange-800 rounded-xl flex flex-col items-center justify-center text-orange-400 active:bg-orange-900/60 transition-colors">
-                  <MinusCircle size={32} className="mb-2"/> <span className="font-black text-2xl">-0.1</span> <span className="text-xs font-bold uppercase mt-1">{t('erro_menor')}</span>
-                </button>
-              </div>
-            </div>
+          <div
+            className={`w-4 h-4 rounded-full ${
+              conectado ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+            }`}
+            title={conectado ? 'Conectado' : 'Desconectado'}
+          />
+        </div>
+      </div>
 
-            {/* Bloco de Apresentação */}
-            <div className="bg-slate-800 rounded-2xl p-6 border-2 border-slate-700 shadow-xl flex-1 flex flex-col">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-slate-400 font-bold uppercase tracking-wider">{t('apresentacao')} (6.0)</span>
-                <span className="text-4xl font-black text-blue-400">{apresentacao.toFixed(1)}</span>
-              </div>
-              <div className="flex gap-4 flex-1">
-                <button onClick={() => setApresentacao(p => Math.max(0, p - 0.1))} className="flex-1 bg-slate-700 border-2 border-slate-600 rounded-xl flex items-center justify-center text-slate-300 active:bg-slate-600 transition-colors">
-                  <MinusCircle size={40} />
-                </button>
-                <button onClick={() => setApresentacao(p => Math.min(6.0, p + 0.1))} className="flex-1 bg-blue-900/30 border-2 border-blue-800 rounded-xl flex items-center justify-center text-blue-400 active:bg-blue-900/60 transition-colors">
-                  <PlusCircle size={40} />
-                </button>
-              </div>
-            </div>
-
-            {/* Submeter Nota */}
-            <button onClick={enviarNotaPoomsae} className="w-full bg-blue-600 text-white py-6 rounded-2xl font-black text-2xl uppercase tracking-widest shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-transform">
-              {t('enviar_nota', { valor: (precisao + apresentacao).toFixed(1) })} <Send size={24} />
-            </button>
-          </main>
+      {/* Status */}
+      <div className="bg-black/30 border-b border-omega-red/20 p-4 text-center">
+        <p className="text-sm">
+          Status:{' '}
+          <span
+            className={`font-bold ${
+              status === 'pronto'
+                ? 'text-green-400'
+                : status === 'ponto_validado'
+                ? 'text-green-500'
+                : 'text-yellow-400'
+            }`}
+          >
+            {t(status === 'pronto' ? 'estou_pronto' : 'sincronizando_joystick')}
+          </span>
+        </p>
+        {!conectado && (
+          <p className="text-red-400 text-xs mt-2">
+            ⚠️ {t('erro_sincronizar')} - Tentando reconectar...
+          </p>
         )}
       </div>
-    );
-  }
 
-  // TELA 4: JOYSTICK KYORUGUI (LUTA)
-  return (
-    <div className="min-h-screen bg-black font-sans flex flex-col select-none touch-manipulation overflow-hidden">
-      <header className="bg-gray-900 p-2 text-center border-b border-gray-800 flex justify-between items-center px-4">
-        <span className="text-gray-500 font-bold uppercase text-xs">Quadra {minhaQuadra.numero_quadra}</span>
-        <span className="text-gray-300 font-black text-sm uppercase">{meuSlot.replace('lateral', 'Lateral ')}</span>
-      </header>
-      
-      {/* OS DOIS LADOS DO COMANDO */}
-      <main className="flex-1 flex">
-        
-        {/* COMANDO VERMELHO */}
-        <div className="flex-1 bg-red-900 border-r-4 border-black flex flex-col p-2 gap-2">
-          <button id="btn-red-3" onClick={() => enviarPontoKyorugui('red', 3)} className="flex-1 bg-red-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-red-200 font-bold text-sm uppercase mb-1">Cabeça</span>
-            <span className="text-white font-black text-5xl">+3</span>
-          </button>
-          <button id="btn-red-2" onClick={() => enviarPontoKyorugui('red', 2)} className="flex-1 bg-red-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-red-200 font-bold text-sm uppercase mb-1">Tronco Giro</span>
-            <span className="text-white font-black text-5xl">+2</span>
-          </button>
-          <button id="btn-red-1" onClick={() => enviarPontoKyorugui('red', 1)} className="flex-1 bg-red-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-red-200 font-bold text-sm uppercase mb-1">Soco</span>
-            <span className="text-white font-black text-5xl">+1</span>
-          </button>
+      {/* Área Principal - Joystick */}
+      <div className="flex-1 flex items-center justify-center p-6 md:p-12">
+        <div className="grid grid-cols-2 gap-6 w-full max-w-4xl">
+          {/* BOTÕES VERMELHO */}
+          <div className="space-y-4">
+            <h2 className="text-center font-bold text-red-400 text-lg">
+              {t('cor_vermelha', { cor: 'Vermelho' })} 🔴
+            </h2>
+
+            {/* +1 Vermelho */}
+            <button
+              onClick={() => enviarClique('+1', 'vermelho')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
+            >
+              <div className="text-5xl md:text-6xl">+1</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_baixo', { ponto: 'Ponto' })}
+              </div>
+            </button>
+
+            {/* +2 Vermelho */}
+            <button
+              onClick={() => enviarClique('+2', 'vermelho')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
+            >
+              <div className="text-5xl md:text-6xl">+2</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_chute', { ponto: 'Chute' })}
+              </div>
+            </button>
+
+            {/* +3 Vermelho */}
+            <button
+              onClick={() => enviarClique('+3', 'vermelho')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-red-700 hover:bg-red-600 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-500"
+            >
+              <div className="text-5xl md:text-6xl">+3</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_cabeca', { ponto: 'Cabeça' })}
+              </div>
+            </button>
+          </div>
+
+          {/* BOTÕES AZUL */}
+          <div className="space-y-4">
+            <h2 className="text-center font-bold text-blue-400 text-lg">
+              {t('cor_azul', { cor: 'Azul' })} 🔵
+            </h2>
+
+            {/* +1 Azul */}
+            <button
+              onClick={() => enviarClique('+1', 'azul')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
+            >
+              <div className="text-5xl md:text-6xl">+1</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_baixo', { ponto: 'Ponto' })}
+              </div>
+            </button>
+
+            {/* +2 Azul */}
+            <button
+              onClick={() => enviarClique('+2', 'azul')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
+            >
+              <div className="text-5xl md:text-6xl">+2</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_chute', { ponto: 'Chute' })}
+              </div>
+            </button>
+
+            {/* +3 Azul */}
+            <button
+              onClick={() => enviarClique('+3', 'azul')}
+              disabled={bloqueado || !conectado}
+              className="w-full py-8 md:py-12 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 
+                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-500"
+            >
+              <div className="text-5xl md:text-6xl">+3</div>
+              <div className="text-xs md:text-sm mt-2 opacity-80">
+                {t('ponto_cabeca', { ponto: 'Cabeça' })}
+              </div>
+            </button>
+          </div>
         </div>
+      </div>
 
-        {/* COMANDO AZUL */}
-        <div className="flex-1 bg-blue-900 flex flex-col p-2 gap-2">
-          <button id="btn-blue-3" onClick={() => enviarPontoKyorugui('blue', 3)} className="flex-1 bg-blue-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-blue-200 font-bold text-sm uppercase mb-1">Cabeça</span>
-            <span className="text-white font-black text-5xl">+3</span>
-          </button>
-          <button id="btn-blue-2" onClick={() => enviarPontoKyorugui('blue', 2)} className="flex-1 bg-blue-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-blue-200 font-bold text-sm uppercase mb-1">Tronco Giro</span>
-            <span className="text-white font-black text-5xl">+2</span>
-          </button>
-          <button id="btn-blue-1" onClick={() => enviarPontoKyorugui('blue', 1)} className="flex-1 bg-blue-600 rounded-2xl flex flex-col items-center justify-center shadow-[inset_0_-8px_0_rgba(0,0,0,0.2)] active:translate-y-2 active:shadow-none transition-all">
-            <span className="text-blue-200 font-bold text-sm uppercase mb-1">Soco</span>
-            <span className="text-white font-black text-5xl">+1</span>
-          </button>
+      {/* Log de Cliques Recentes */}
+      {ultimos_cliques.length > 0 && (
+        <div className="bg-black/50 border-t border-omega-red/30 p-4">
+          <h3 className="text-xs text-gray-400 mb-2">Últimos cliques:</h3>
+          <div className="flex gap-2 flex-wrap">
+            {ultimos_cliques.map((clique) => (
+              <span
+                key={clique.id}
+                className={`px-3 py-1 rounded-full text-xs font-bold ${
+                  clique.cor === 'vermelho'
+                    ? 'bg-red-900 text-red-200'
+                    : 'bg-blue-900 text-blue-200'
+                }`}
+              >
+                {clique.cor[0].toUpperCase()} {clique.tipo_ponto}
+              </span>
+            ))}
+          </div>
         </div>
+      )}
 
-      </main>
+      {/* Informações do Sistema */}
+      <div className="bg-black/30 border-t border-gray-700 p-3 text-center text-xs text-gray-500">
+        <div className="flex justify-center gap-4 flex-wrap">
+          <span title="WebSocket conectado">
+            🔌 {conectado ? '✅' : '❌'} WebSocket
+          </span>
+          <span title="Wake Lock ativo">
+            📱 {wakeLock.current ? '✅' : '❌'} Wake Lock
+          </span>
+          <span title="Haptic Feedback disponível">
+            📳 {navigator.vibrate ? '✅' : '❌'} Vibração
+          </span>
+          <span title="Tela ativa">
+            💡 {telaAtiva ? '✅' : '❌'} Tela Ativa
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

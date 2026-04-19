@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Play, Pause, Square, AlertTriangle, Clock, ArrowRight, UserX, MonitorUp, Trophy, CheckCircle, Users, RotateCcw } from 'lucide-react';
@@ -31,10 +31,15 @@ export function MesarioPanel() {
   // ESTADOS DO RELÓGIO
   // ==========================================
   const [duracaoRound, setDuracaoRound] = useState(90);
-  const [maxRounds, setMaxRounds] = useState(2);
   const [tempo, setTempo] = useState(90);
   const [tempoRodando, setTempoRodando] = useState(false);
   const [modoWO, setModoWO] = useState(false);
+
+  // ==========================================
+  // ESTADOS DO WEBSOCKET (JOYSTICK)
+  // ==========================================
+  const [ultimoPontoRecebido, setUltimoPontoRecebido] = useState(null);
+  const ws = useRef(null);
 
   // ==========================================
   // 1. CARREGAMENTO E POLLING DO LOBBY
@@ -55,7 +60,7 @@ export function MesarioPanel() {
         const err = await res.json();
         setErroAcesso(err.detail);
       }
-    } catch (e) {
+    } catch {
       console.error(t('erro_buscar_quadra'));
     }
   };
@@ -65,6 +70,7 @@ export function MesarioPanel() {
     carregarMinhaQuadra();
     const intervalo = setInterval(carregarMinhaQuadra, 3000);
     return () => clearInterval(intervalo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuarioLogado, quadraAberta, id]);
 
   const simularReady = async (slot, isReady) => {
@@ -84,7 +90,73 @@ export function MesarioPanel() {
   };
 
   // ==========================================
-  // 2. INTEGRAÇÃO COM O BANCO DE DADOS
+  // 2B. WEBSOCKET PARA PONTOS DO JOYSTICK (KYORUGUI)
+  // ==========================================
+  useEffect(() => {
+    if (!quadraAberta || !lutaAtual || lutaAtual.modalidade === 'Poomsae') return;
+
+    const conectarJoystickWebSocket = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${id}/${minhaQuadra?.numero_quadra}`;
+
+      console.log('🔗 Conectando WebSocket Mesário:', wsUrl);
+
+      ws.current = new WebSocket(wsUrl);
+
+      ws.current.onopen = () => {
+        console.log('✅ WebSocket Mesário conectado');
+      };
+
+      ws.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('📨 Ponto recebido via WebSocket:', data);
+
+        // Se for ponto validado por Coincidence Window, atualizar automaticamente
+        if (data.status === 'ponto_validado' && data.cor && data.pontos) {
+          setUltimoPontoRecebido(data);
+          
+          // Atualizar placar automaticamente
+          setPlacar(prev => {
+            const novosPlacar = { ...prev };
+            if (data.cor === 'vermelho') {
+              novosPlacar.redPontos += parseInt(data.pontos);
+            } else if (data.cor === 'azul') {
+              novosPlacar.bluePontos += parseInt(data.pontos);
+            }
+            return novosPlacar;
+          });
+
+          // Fazer vibração se disponível
+          if (navigator.vibrate) {
+            navigator.vibrate([100, 50, 100]);
+          }
+
+          // Limpar indicador de ponto após 2 segundos
+          setTimeout(() => setUltimoPontoRecebido(null), 2000);
+        }
+      };
+
+      ws.current.onerror = (error) => {
+        console.error('❌ Erro WebSocket Mesário:', error);
+      };
+
+      ws.current.onclose = () => {
+        console.log('❌ WebSocket Mesário desconectado');
+      };
+    };
+
+    conectarJoystickWebSocket();
+
+    return () => {
+      if (ws.current) {
+        ws.current.close();
+      }
+    };
+  }, [quadraAberta, lutaAtual, id, minhaQuadra?.numero_quadra, t]);
+
+  // ==========================================
+  // 2C. INTEGRAÇÃO COM O BANCO DE DADOS
   // ==========================================
   const puxarProximaLuta = async () => {
     setLoadingLuta(true);
@@ -116,7 +188,7 @@ export function MesarioPanel() {
         alert(t('nao_ha_mais_lutas_fila'));
         setQuadraAberta(false);
       }
-    } catch (e) {
+    } catch {
       alert(t('erro_buscar_proxima_luta'));
     } finally {
       setLoadingLuta(false);
@@ -142,7 +214,7 @@ export function MesarioPanel() {
         })
       });
       puxarProximaLuta(); 
-    } catch (e) {
+    } catch {
       alert(t('erro_salvar_resultado_banco'));
       setLoadingLuta(false);
     }
@@ -167,7 +239,7 @@ export function MesarioPanel() {
         setStatusLuta('encerrada'); // Poomsae encerra direto, sem rounds
       }
       else if (statusLuta === 'andamento') {
-        if (placar.round < maxRounds) {
+        if (placar.round < 2) {
           setStatusLuta('intervalo');
           setTempo(60); 
           setTempoRodando(true);
@@ -182,7 +254,7 @@ export function MesarioPanel() {
         }
       } 
       else if (statusLuta === 'intervalo') {
-        if (placar.round < maxRounds) {
+        if (placar.round < 2) {
           setPlacar(prev => ({ ...prev, round: prev.round + 1 }));
           setStatusLuta('andamento');
           setTempo(duracaoRound);
@@ -197,7 +269,7 @@ export function MesarioPanel() {
       }
     }
     return () => clearInterval(intervalo);
-  }, [tempoRodando, tempo, modoWO, statusLuta, placar.round, maxRounds, duracaoRound, placar.redPontos, placar.bluePontos, lutaAtual]);
+  }, [tempoRodando, tempo, modoWO, statusLuta, placar.round, duracaoRound, placar.redPontos, placar.bluePontos, lutaAtual, t]);
 
   useEffect(() => {
     if (statusLuta === 'golden_point') {
@@ -493,6 +565,18 @@ export function MesarioPanel() {
           // LAYOUT PARA KYORUGUI (LUTA VERMELHO VS AZUL)
           // ==========================================
           <>
+            {/* INDICADOR DE PONTO RECEBIDO */}
+            {ultimoPontoRecebido && (
+              <div className={`lg:col-span-12 flex items-center justify-center gap-3 py-4 rounded-xl font-black text-xl tracking-widest uppercase animate-pulse ${
+                ultimoPontoRecebido.cor === 'vermelho'
+                  ? 'bg-red-600/80 text-white'
+                  : 'bg-blue-600/80 text-white'
+              }`}>
+                <CheckCircle size={32} />
+                {t('ponto_validado')} • {ultimoPontoRecebido.cor} +{ultimoPontoRecebido.pontos}
+              </div>
+            )}
+
             {/* LADO VERMELHO */}
             <section className={`lg:col-span-4 flex flex-col bg-red-900 bg-opacity-20 border-2 rounded-2xl p-4 relative overflow-hidden transition-all ${vencedor === 'red' ? 'border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.4)]' : 'border-red-800'}`}>
               {vencedor === 'red' && <div className="absolute inset-0 bg-red-500 bg-opacity-20 animate-pulse pointer-events-none z-0"></div>}

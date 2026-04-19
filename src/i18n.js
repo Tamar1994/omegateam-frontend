@@ -248,7 +248,19 @@ const resources = {
         "feminino": "Feminino",
         "enviar_token": "Enviar Código",
         "validando": "Validando...",
-        "confirmar_conta": "Confirmar Conta"
+        "confirmar_conta": "Confirmar Conta",
+        "ponto_baixo": "Ponto Baixo",
+        "ponto_chute": "Chute",
+        "ponto_cabeca": "Cabeça",
+        "cor_vermelha": "Vermelho",
+        "cor_azul": "Azul",
+        "juiz_lateral": "Juiz Lateral",
+        "sincronizando_joystick": "Sincronizando Joystick...",
+        "erro_sincronizar": "Erro ao sincronizar. Tente reconectar.",
+        "ponto_validado": "Ponto Validado!",
+        "clique_recebido": "Clique Recebido",
+        "enviar_ponto": "Enviar Ponto",
+        "aguardando_juizes": "Aguardando confirmação dos juízes..."
     }
   },
   en: {
@@ -496,7 +508,19 @@ const resources = {
         "feminino": "Female",
         "enviar_token": "Send Code",
         "validando": "Validating...",
-        "confirmar_conta": "Confirm Account"
+        "confirmar_conta": "Confirm Account",
+        "ponto_baixo": "Low Point",
+        "ponto_chute": "Kick",
+        "ponto_cabeca": "Head",
+        "cor_vermelha": "Red",
+        "cor_azul": "Blue",
+        "juiz_lateral": "Lateral Judge",
+        "sincronizando_joystick": "Synchronizing Joystick...",
+        "erro_sincronizar": "Error synchronizing. Try reconnecting.",
+        "ponto_validado": "Point Validated!",
+        "clique_recebido": "Click Received",
+        "enviar_ponto": "Send Point",
+        "aguardando_juizes": "Waiting for judges confirmation..."
     }
   },
   es: {
@@ -744,7 +768,19 @@ const resources = {
         "feminino": "Femenino",
         "enviar_token": "Enviar Código",
         "validando": "Validando...",
-        "confirmar_conta": "Confirmar Cuenta"
+        "confirmar_conta": "Confirmar Cuenta",
+        "ponto_baixo": "Punto Bajo",
+        "ponto_chute": "Patada",
+        "ponto_cabeca": "Cabeza",
+        "cor_vermelha": "Rojo",
+        "cor_azul": "Azul",
+        "juiz_lateral": "Juez Lateral",
+        "sincronizando_joystick": "Sincronizando Joystick...",
+        "erro_sincronizar": "Error al sincronizar. Intente reconectarse.",
+        "ponto_validado": "¡Punto Validado!",
+        "clique_recebido": "Clic Recibido",
+        "enviar_ponto": "Enviar Punto",
+        "aguardando_juizes": "Esperando confirmación de los jueces..."
     }
   }
 };
