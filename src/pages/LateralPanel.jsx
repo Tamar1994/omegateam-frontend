@@ -28,6 +28,7 @@ export function LateralPanel() {
   const [ultimos_cliques, setUltimosCliques] = useState([]);
   const [bloqueado, setBloqueado] = useState(false); // Prevenção de duplos cliques
   const [telaAtiva, setTelaAtiva] = useState(true); // Wake Lock
+  const [backendOk, setBackendOk] = useState(null); // Teste de conectividade com backend
 
   // ==========================================
   // REFS
@@ -40,14 +41,41 @@ export function LateralPanel() {
   // EFEITOS
   // ==========================================
 
+  // 0. Testar conectividade com backend
+  useEffect(() => {
+    const testarBackend = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        const response = await fetch(`${baseUrl}/api/joystick/health`);
+        const data = await response.json();
+        
+        console.log('✅ Backend OK:', data);
+        setBackendOk(true);
+      } catch (error) {
+        console.error('❌ Backend NÃO acessível:', error);
+        setBackendOk(false);
+      }
+    };
+
+    testarBackend();
+  }, []);
+
   // 1. Carregar usuário e conectar WebSocket
   useEffect(() => {
     const usuarioSalvo = JSON.parse(localStorage.getItem('usuarioOmegaTeam') || '{}');
     setUsuario(usuarioSalvo);
 
+    console.group('📱 INICIANDO LATERALPANEL');
+    console.log('Campus ID:', campId);
+    console.log('Usuário:', usuarioSalvo);
+    console.groupEnd();
+
     if (usuarioSalvo.email && campId) {
+      console.log('✅ Dados OK, conectando WebSocket...');
       conectarWebSocket(usuarioSalvo.email);
       iniciarWakeLock();
+    } else {
+      console.error('❌ Faltam dados:', { email: usuarioSalvo.email, campId });
     }
 
     return () => {
@@ -103,14 +131,17 @@ export function LateralPanel() {
   const conectarWebSocket = (email) => {
     // Validação: campId não pode estar vazio
     if (!campId) {
-      console.error('❌ Erro: campId não foi recebido. URL:', window.location.pathname);
+      console.error('❌ ERRO CRÍTICO: campId não foi recebido');
+      console.error('📍 URL da página:', window.location.href);
+      console.error('📍 Pathname:', window.location.pathname);
       setStatus('erro_conexao');
       setConectado(false);
       return;
     }
 
     if (!email) {
-      console.error('❌ Erro: email do usuário não está disponível');
+      console.error('❌ ERRO CRÍTICO: email do usuário não está disponível');
+      console.error('📍 Usuario:', usuario);
       setStatus('erro_conexao');
       setConectado(false);
       return;
@@ -121,15 +152,23 @@ export function LateralPanel() {
     
     // ⚠️ IMPORTANTE: URL-encode o email para evitar problemas com @
     const emailCodificado = encodeURIComponent(email);
-    const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/lateral/${campId}/${emailCodificado}`;
+    const hostBackend = baseUrl.split('//')[1] || 'localhost:8000';
+    const wsUrl = `${protocol}//${hostBackend}/api/ws/lateral/${campId}/${emailCodificado}`;
 
-    console.log('🔗 Conectando WebSocket:', wsUrl);
-    console.log('📍 Dados:', { campId, email, emailCodificado, protocol, baseUrl });
+    console.group('🔗 CONECTANDO WEBSOCKET');
+    console.log('Protocol:', protocol);
+    console.log('Base URL:', baseUrl);
+    console.log('Host Backend:', hostBackend);
+    console.log('Camp ID:', campId);
+    console.log('Email:', email);
+    console.log('Email Codificado:', emailCodificado);
+    console.log('URL FINAL:', wsUrl);
+    console.groupEnd();
 
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
-      console.log('✅ WebSocket conectado');
+      console.log('✅ WebSocket ABERTO e CONECTADO!');
       setConectado(true);
       setStatus('pronto');
     };
@@ -150,19 +189,23 @@ export function LateralPanel() {
     };
 
     ws.current.onerror = (error) => {
-      console.error('❌ Erro WebSocket:', error);
-      console.error('Estado WebSocket:', ws.current?.readyState);
-      console.error('URL tentada:', ws.current?.url);
+      console.group('❌ ERRO WEBSOCKET');
+      console.error('Erro:', error);
+      console.error('ReadyState:', ws.current?.readyState, '(0=connecting, 1=open, 2=closing, 3=closed)');
+      console.error('URL:', ws.current?.url);
+      console.error('Protocolo:', ws.current?.protocol);
+      console.groupEnd();
       setConectado(false);
       setStatus('erro_conexao');
     };
 
     ws.current.onclose = (event) => {
-      console.log('❌ WebSocket desconectado', { 
-        code: event.code, 
-        reason: event.reason, 
-        wasClean: event.wasClean 
-      });
+      console.group('❌ WEBSOCKET FECHADO');
+      console.log('Code:', event.code);
+      console.log('Reason:', event.reason);
+      console.log('wasClean:', event.wasClean);
+      console.log('Codes comuns: 1000=normal, 1006=anormal, 1009=msg grande');
+      console.groupEnd();
       setConectado(false);
       setStatus('desconectado');
       
@@ -388,6 +431,11 @@ export function LateralPanel() {
             ⚠️ {t('erro_sincronizar')} - Tentando reconectar...
           </p>
         )}
+        {backendOk === false && (
+          <p className="text-orange-400 text-xs mt-2">
+            ⚠️ Backend não acessível! Verifique a conexão de internet.
+          </p>
+        )}
       </div>
 
       {/* Área Principal - Joystick */}
@@ -517,6 +565,9 @@ export function LateralPanel() {
       {/* Informações do Sistema */}
       <div className="bg-black/30 border-t border-gray-700 p-3 text-center text-xs text-gray-500">
         <div className="flex justify-center gap-4 flex-wrap">
+          <span title="Backend acessível">
+            🖥️ {backendOk === true ? '✅' : backendOk === false ? '❌' : '⏳'} Backend
+          </span>
           <span title="WebSocket conectado">
             🔌 {conectado ? '✅' : '❌'} WebSocket
           </span>
