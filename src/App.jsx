@@ -48,11 +48,11 @@ function App() {
         {/* Rota do painel lateral */}
         <Route path="/lateral/:id" element={<LateralPanel />} />
 
-        {/* Rota do Scoreboard/Placar TV */}
-        <Route path="/scoreboard/:id/:quadra" element={<ScoreboardTV />} />
-        
-        {/* Rota FIXA do Scoreboard TV - Input Token + Polling */}
+        {/* Rota FIXA do Scoreboard TV - Input Token + Polling (deve vir ANTES da dinâmica) */}
         <Route path="/scoreboard" element={<ScoreboardTVToken />} />
+        
+        {/* Rota do Scoreboard/Placar TV (dinâmica - antiga) */}
+        <Route path="/scoreboard/:id/:quadra" element={<ScoreboardTV />} />
       </Routes>
     </BrowserRouter>
   );
