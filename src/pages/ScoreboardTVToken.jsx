@@ -5,12 +5,14 @@ import omegaLogo from '../assets/omega-logo.png';
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 /**
- * Scoreboard - Página FIXA e única para Scoreboard TV
+ * Scoreboard TV Profissional - Página FIXA para exibição em TV
  * 
- * 1. Input do token (XXXX-XXXX)
- * 2. Validação do token
- * 3. Polling de lutas usando token armazenado
- * 4. Exibição de lutas ou logo standby
+ * Funcionalidades:
+ * 1. Input do token (XXXX-XXXX) com validação
+ * 2. Polling automático a cada 2 segundos
+ * 3. Layout profissional tipo Taekwondo TV
+ * 4. Placar gigante, timer, round, faltas
+ * 5. Suporte Kyorugui e Poomsae
  */
 export function ScoreboardTVToken() {
   const [token, setToken] = useState('');
@@ -167,8 +169,8 @@ export function ScoreboardTVToken() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-8">
-          <img src={omegaLogo} alt="Omega Team" className="h-32 bg-white p-4 rounded-lg shadow-lg" />
-          <p className="text-white text-3xl font-black tracking-widest">AGUARDANDO PRÓXIMA LUTA</p>
+          <img src={omegaLogo} alt="Omega Team" className="h-40" />
+          <p className="text-white text-4xl font-black tracking-widest">AGUARDANDO PRÓXIMA LUTA</p>
         </div>
       </div>
     );
@@ -185,88 +187,200 @@ export function ScoreboardTVToken() {
 }
 
 // ==========================================
-// COMPONENTE: KYORUGUI
+// COMPONENTE: KYORUGUI PROFISSIONAL PARA TV
 // ==========================================
 function ScoreboardKyorugui({ luta }) {
-  return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8">
-      {/* Informações da Luta */}
-      <div className="mb-8 text-center">
-        <p className="text-gray-400 text-lg">KYORUGUI - {luta.nome_categoria}</p>
-        <p className="text-white text-xl font-bold">{luta.atleta_vermelho?.split(' (')[0]} vs {luta.atleta_azul?.split(' (')[0]}</p>
-      </div>
+  const extrairPais = (nome) => {
+    const match = nome?.match(/\(([^)]+)\)$/);
+    return match ? match[1] : '';
+  };
 
-      {/* Placar Gigante */}
-      <div className="grid grid-cols-2 gap-8 w-full max-w-4xl">
-        {/* Vermelho */}
-        <div className="bg-red-950/50 border-4 border-red-600 rounded-3xl p-12 text-center">
-          <p className="text-red-400 text-2xl font-bold mb-4">🔴 VERMELHO</p>
-          <p className="text-red-600 text-8xl font-black tabular-nums mb-6">
+  const pais_vermelho = extrairPais(luta.atleta_vermelho);
+  const pais_azul = extrairPais(luta.atleta_azul);
+  const nome_vermelho = luta.atleta_vermelho?.split(' (')[0] || 'ATLETA';
+  const nome_azul = luta.atleta_azul?.split(' (')[0] || 'ATLETA';
+
+  return (
+    <div className="min-h-screen bg-black text-white flex overflow-hidden">
+      
+      {/* ===== LADO ESQUERDO - VERMELHO ===== */}
+      <div className="flex-1 bg-red-950 border-r-8 border-yellow-400 flex flex-col justify-between p-8">
+        
+        {/* País/Bandeira */}
+        <div className="text-center mb-4">
+          <p className="text-red-300 text-4xl font-black tracking-widest">{pais_vermelho || 'MAR'}</p>
+        </div>
+
+        {/* Nome do Atleta */}
+        <h1 className="text-center text-7xl font-black text-white leading-none mb-8 line-clamp-3">
+          {nome_vermelho}
+        </h1>
+
+        {/* Placar Gigante */}
+        <div className="flex-1 flex items-center justify-center mb-8">
+          <p className="text-9xl font-black text-red-400" style={{textShadow: '0 0 20px rgba(220, 38, 38, 0.8)'}}>
             {luta.placar_red || 0}
           </p>
-          <div className="space-y-2">
-            <p className="text-red-400">Faltas: <span className="text-4xl font-black">{luta.faltas_red || 0}/10</span></p>
-          </div>
         </div>
 
-        {/* Azul */}
-        <div className="bg-blue-950/50 border-4 border-blue-600 rounded-3xl p-12 text-center">
-          <p className="text-blue-400 text-2xl font-bold mb-4">🔵 AZUL</p>
-          <p className="text-blue-600 text-8xl font-black tabular-nums mb-6">
-            {luta.placar_blue || 0}
-          </p>
-          <div className="space-y-2">
-            <p className="text-blue-400">Faltas: <span className="text-4xl font-black">{luta.faltas_blue || 0}/10</span></p>
-          </div>
+        {/* Faltas */}
+        <div className="text-center bg-red-900/50 rounded-2xl p-6 border-4 border-red-600">
+          <p className="text-red-300 text-2xl font-bold mb-2">FALTAS (GAM-JEOM)</p>
+          <p className="text-7xl font-black text-red-400">{luta.faltas_red || 0}</p>
         </div>
       </div>
 
-      {/* Status */}
-      <div className="mt-12 text-center">
-        <p className="text-gray-500 text-sm">
-          Round {luta.round || 1} • Status: {luta.status || 'Aguardando'}
-        </p>
+      {/* ===== CENTRO - ROUND E TIMER ===== */}
+      <div className="w-96 bg-black border-x-8 border-yellow-400 flex flex-col items-center justify-center gap-8 p-8">
+        
+        {/* Round */}
+        <div className="text-center">
+          <p className="text-yellow-400 text-4xl font-black mb-4">ROUND</p>
+          <p className="text-9xl font-black text-white">{luta.round || 1}</p>
+        </div>
+
+        {/* Status */}
+        <div className="text-center">
+          <p className="text-gray-400 text-2xl font-bold uppercase tracking-widest">
+            {luta.status || 'Aguardando'}
+          </p>
+        </div>
+
+        {/* Categoria */}
+        <div className="text-center mt-auto text-gray-500">
+          <p className="text-sm font-bold">{luta.nome_categoria || ''}</p>
+        </div>
+      </div>
+
+      {/* ===== LADO DIREITO - AZUL ===== */}
+      <div className="flex-1 bg-blue-950 border-l-8 border-yellow-400 flex flex-col justify-between p-8">
+        
+        {/* País/Bandeira */}
+        <div className="text-center mb-4">
+          <p className="text-blue-300 text-4xl font-black tracking-widest">{pais_azul || 'KOR'}</p>
+        </div>
+
+        {/* Nome do Atleta */}
+        <h1 className="text-center text-7xl font-black text-white leading-none mb-8 line-clamp-3">
+          {nome_azul}
+        </h1>
+
+        {/* Placar Gigante */}
+        <div className="flex-1 flex items-center justify-center mb-8">
+          <p className="text-9xl font-black text-blue-400" style={{textShadow: '0 0 20px rgba(37, 99, 235, 0.8)'}}>
+            {luta.placar_blue || 0}
+          </p>
+        </div>
+
+        {/* Faltas */}
+        <div className="text-center bg-blue-900/50 rounded-2xl p-6 border-4 border-blue-600">
+          <p className="text-blue-300 text-2xl font-bold mb-2">FALTAS (GAM-JEOM)</p>
+          <p className="text-7xl font-black text-blue-400">{luta.faltas_blue || 0}</p>
+        </div>
       </div>
     </div>
   );
 }
 
 // ==========================================
-// COMPONENTE: POOMSAE
+// COMPONENTE: POOMSAE PROFISSIONAL PARA TV
 // ==========================================
 function ScoreboardPoomsae({ luta }) {
-  return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8">
-      {/* Informações da Luta */}
-      <div className="mb-8 text-center">
-        <p className="text-gray-400 text-lg">POOMSAE - {luta.nome_categoria}</p>
-        <p className="text-white text-xl font-bold">{luta.atleta_vermelho?.split(' (')[0]} vs {luta.atleta_azul?.split(' (')[0]}</p>
-      </div>
+  const extrairPais = (nome) => {
+    const match = nome?.match(/\(([^)]+)\)$/);
+    return match ? match[1] : '';
+  };
 
-      {/* Notas Gigantes */}
-      <div className="grid grid-cols-2 gap-8 w-full max-w-4xl">
-        {/* Vermelho */}
-        <div className="bg-red-950/50 border-4 border-red-600 rounded-3xl p-12 text-center">
-          <p className="text-red-400 text-2xl font-bold mb-4">🔴 CHONG</p>
-          <p className="text-red-600 text-7xl font-black tabular-nums">
+  const pais_vermelho = extrairPais(luta.atleta_vermelho);
+  const pais_azul = extrairPais(luta.atleta_azul);
+  const nome_vermelho = luta.atleta_vermelho?.split(' (')[0] || 'ATLETA';
+  const nome_azul = luta.atleta_azul?.split(' (')[0] || 'ATLETA';
+
+  return (
+    <div className="min-h-screen bg-black text-white flex overflow-hidden">
+      
+      {/* ===== LADO ESQUERDO - CHONG (VERMELHO) ===== */}
+      <div className="flex-1 bg-red-950 border-r-8 border-yellow-400 flex flex-col justify-between p-8">
+        
+        {/* País */}
+        <div className="text-center mb-4">
+          <p className="text-red-300 text-4xl font-black tracking-widest">{pais_vermelho || 'MAR'}</p>
+        </div>
+
+        {/* Nome */}
+        <h1 className="text-center text-6xl font-black text-white leading-none mb-8 line-clamp-2">
+          {nome_vermelho}
+        </h1>
+
+        {/* Rótulo Chong */}
+        <div className="text-center mb-4">
+          <p className="text-red-300 text-3xl font-black">🔴 CHONG</p>
+        </div>
+
+        {/* Nota Gigante */}
+        <div className="flex-1 flex items-center justify-center mb-8">
+          <p className="text-8xl font-black text-red-400" style={{textShadow: '0 0 20px rgba(220, 38, 38, 0.8)'}}>
             {luta.nota_red?.toFixed(2) || '0.00'}
           </p>
         </div>
 
-        {/* Azul */}
-        <div className="bg-blue-950/50 border-4 border-blue-600 rounded-3xl p-12 text-center">
-          <p className="text-blue-400 text-2xl font-bold mb-4">🔵 HONG</p>
-          <p className="text-blue-600 text-7xl font-black tabular-nums">
-            {luta.nota_azul?.toFixed(2) || '0.00'}
-          </p>
+        {/* Poomsaes apresentadas */}
+        <div className="text-center bg-red-900/50 rounded-xl p-4 border-2 border-red-600 text-sm">
+          <p className="text-red-300 font-bold">Poomsae 1: {luta.poomsae_1 || '---'}</p>
+          {luta.poomsae_2 && <p className="text-red-300 font-bold">Poomsae 2: {luta.poomsae_2}</p>}
         </div>
       </div>
 
-      {/* Status */}
-      <div className="mt-12 text-center">
-        <p className="text-gray-500 text-sm">
-          Status: {luta.status || 'Aguardando'}
-        </p>
+      {/* ===== CENTRO ===== */}
+      <div className="w-96 bg-black border-x-8 border-yellow-400 flex flex-col items-center justify-center gap-8 p-8">
+        
+        {/* Status */}
+        <div className="text-center">
+          <p className="text-yellow-400 text-2xl font-black mb-4">POOMSAE</p>
+          <p className="text-gray-400 text-2xl font-bold uppercase tracking-widest">
+            {luta.status || 'Aguardando'}
+          </p>
+        </div>
+
+        {/* Categoria */}
+        <div className="text-center text-gray-500">
+          <p className="text-sm font-bold">{luta.nome_categoria || ''}</p>
+        </div>
+
+        {/* Logo Omega */}
+        <img src={omegaLogo} alt="Omega" className="h-32 mt-auto opacity-50" />
+      </div>
+
+      {/* ===== LADO DIREITO - HONG (AZUL) ===== */}
+      <div className="flex-1 bg-blue-950 border-l-8 border-yellow-400 flex flex-col justify-between p-8">
+        
+        {/* País */}
+        <div className="text-center mb-4">
+          <p className="text-blue-300 text-4xl font-black tracking-widest">{pais_azul || 'KOR'}</p>
+        </div>
+
+        {/* Nome */}
+        <h1 className="text-center text-6xl font-black text-white leading-none mb-8 line-clamp-2">
+          {nome_azul}
+        </h1>
+
+        {/* Rótulo Hong */}
+        <div className="text-center mb-4">
+          <p className="text-blue-300 text-3xl font-black">🔵 HONG</p>
+        </div>
+
+        {/* Nota Gigante */}
+        <div className="flex-1 flex items-center justify-center mb-8">
+          <p className="text-8xl font-black text-blue-400" style={{textShadow: '0 0 20px rgba(37, 99, 235, 0.8)'}}>
+            {luta.nota_azul?.toFixed(2) || '0.00'}
+          </p>
+        </div>
+
+        {/* Poomsaes apresentadas */}
+        <div className="text-center bg-blue-900/50 rounded-xl p-4 border-2 border-blue-600 text-sm">
+          <p className="text-blue-300 font-bold">Poomsae 1: {luta.poomsae_1 || '---'}</p>
+          {luta.poomsae_2 && <p className="text-blue-300 font-bold">Poomsae 2: {luta.poomsae_2}</p>}
+        </div>
       </div>
     </div>
   );
