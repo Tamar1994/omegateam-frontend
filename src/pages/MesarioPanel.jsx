@@ -40,6 +40,7 @@ export function MesarioPanel() {
   // ==========================================
   const [ultimoPontoRecebido, setUltimoPontoRecebido] = useState(null);
   const [lateraisConectados, setLateraisConectados] = useState([]);
+  const [alertaLateralCaiu, setAlertaLateralCaiu] = useState(null); // Armazena email do lateral que caiu
   const ws = useRef(null);
 
   // ==========================================
@@ -136,6 +137,29 @@ export function MesarioPanel() {
         // ✅ NOVO: Atualizar status dos laterais conectados
         if (data.status === 'laterais_atualizacao') {
           console.log(`🔄 Laterais atualizados: ${data.total_laterais} conectados`, data.laterais_conectados);
+          
+          // 🔴 DETECTAR SE UM LATERAL CAIU
+          if (lateraisConectados.length > (data.laterais_conectados || []).length) {
+            // Encontrar qual lateral saiu
+            for (const email of lateraisConectados) {
+              if (!data.laterais_conectados?.includes(email)) {
+                console.error(`❌ LATERAL DESCONECTOU: ${email}`);
+                setAlertaLateralCaiu(email);
+                
+                // ⏸️ PAUSAR A LUTA SE ESTIVER EM ANDAMENTO
+                if (quadraAberta) {
+                  console.error('⏸️ PAUSANDO LUTA - Lateral caiu durante a luta!');
+                  setQuadraAberta(false);
+                  setTempoRodando(false);
+                }
+                
+                // Limpar alerta após 5 segundos
+                setTimeout(() => setAlertaLateralCaiu(null), 5000);
+                break;
+              }
+            }
+          }
+          
           setLateraisConectados(data.laterais_conectados || []);
           return; // Não processar como ponto
         }
@@ -429,6 +453,16 @@ export function MesarioPanel() {
                 );
               })}
             </div>
+
+            {/* 🔴 ALERTA: LATERAL DESCONECTOU */}
+            {alertaLateralCaiu && (
+              <div className="bg-red-900/40 border-2 border-red-500 rounded-xl p-4 text-center">
+                <p className="text-red-300 font-bold">
+                  ⚠️ Lateral desconectou! A luta foi pausada.
+                </p>
+                <p className="text-xs text-red-400">{alertaLateralCaiu}</p>
+              </div>
+            )}
 
             <button 
               onClick={() => { setQuadraAberta(true); puxarProximaLuta(); }}

@@ -12,6 +12,15 @@ import { Minus, Plus } from 'lucide-react';
  * - Accuracy Deduct (Dedução de Precisão)
  */
 export function JoystickPoomsae({ luta, usuario, ws, t }) {
+  // ✅ Guard: Se luta não chegou ou não tem dados necessários
+  if (!luta || !luta.id) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="text-gray-400 text-lg">Aguardando dados da luta...</p>
+      </div>
+    );
+  }
+
   const [dedutoesVermelho, setDedutoesVermelho] = useState({
     accuracy: 0,
     speedPower: 0,
