@@ -41,6 +41,7 @@ export function MesarioPanel() {
   const [ultimoPontoRecebido, setUltimoPontoRecebido] = useState(null);
   const [lateraisConectados, setLateraisConectados] = useState([]);
   const [alertaLateralCaiu, setAlertaLateralCaiu] = useState(null); // Armazena email do lateral que caiu
+  const [tokenScoreboard, setTokenScoreboard] = useState(null); // Token para acesso ao Scoreboard
   const ws = useRef(null);
 
   // ==========================================
@@ -217,6 +218,12 @@ export function MesarioPanel() {
       if (res.ok) {
         const dadosLuta = await res.json();
         setLutaAtual(dadosLuta);
+        
+        // 📺 SALVAR TOKEN DO SCOREBOARD
+        if (dadosLuta.token_scoreboard) {
+          setTokenScoreboard(dadosLuta.token_scoreboard);
+          console.log('📺 Token Scoreboard:', dadosLuta.token_scoreboard);
+        }
         
         let tempoCalculado = 60;
         const cat = (dadosLuta.nome_categoria || "").toLowerCase();
@@ -525,7 +532,28 @@ export function MesarioPanel() {
           // ==========================================
           // LAYOUT EXCLUSIVO PARA POOMSAE (CHAVES 1v1)
           // ==========================================
-          <section className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section className="lg:col-span-12 space-y-6">
+            
+            {/* 📺 CÓDIGO SCOREBOARD */}
+            {tokenScoreboard && (
+              <div className="bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-2 border-purple-500 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-purple-300 font-bold text-sm">📺 CÓDIGO SCOREBOARD PARA TV</p>
+                  <p className="text-gray-400 text-xs mt-1">Compartilhe este código para abrir o Scoreboard na TV</p>
+                </div>
+                <div 
+                  onClick={() => {
+                    navigator.clipboard.writeText(tokenScoreboard);
+                    alert('Código copiado!');
+                  }}
+                  className="bg-purple-700 hover:bg-purple-600 cursor-pointer text-white px-6 py-3 rounded-lg font-black text-2xl tracking-widest transition-colors"
+                >
+                  {tokenScoreboard}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* LADO VERMELHO (CHONG) */}
             <div className={`flex flex-col bg-red-900 bg-opacity-20 border-4 rounded-2xl p-6 relative transition-all ${statusLuta === 'turno_chong_p1' || statusLuta === 'turno_chong_p2' ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)]' : vencedor === 'red' ? 'border-yellow-400 shadow-[0_0_50px_rgba(250,204,21,0.5)]' : 'border-red-900'}`}>

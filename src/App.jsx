@@ -11,6 +11,8 @@ import { ArbitroDashboard } from './pages/ArbitroDashboard';
 import { MesarioPanel } from './pages/MesarioPanel';
 import { LateralPanel } from './pages/LateralPanel';
 import { ScoreboardTV } from './pages/ScoreboardTV';
+import { ScoreboardAccess } from './pages/ScoreboardAccess';
+import { ScoreboardTVToken } from './pages/ScoreboardTVToken';
 import './i18n'; // Importa a configuração de i18n
 
 function App() {
@@ -49,6 +51,12 @@ function App() {
 
         {/* Rota do Scoreboard/Placar TV */}
         <Route path="/scoreboard/:id/:quadra" element={<ScoreboardTV />} />
+        
+        {/* Rota de Acesso ao Scoreboard via Token */}
+        <Route path="/scoreboard" element={<ScoreboardAccess />} />
+        
+        {/* Rota do Scoreboard TV com Token */}
+        <Route path="/scoreboard-tv/:luta_id/:numero_quadra" element={<ScoreboardTVToken />} />
       </Routes>
     </BrowserRouter>
   );
