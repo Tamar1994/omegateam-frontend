@@ -10,6 +10,7 @@ import { Live } from './pages/Live';
 import { ArbitroDashboard } from './pages/ArbitroDashboard';
 import { MesarioPanel } from './pages/MesarioPanel';
 import { LateralPanel } from './pages/LateralPanel';
+import { ScoreboardTV } from './pages/ScoreboardTV';
 import './i18n'; // Importa a configuração de i18n
 
 function App() {
@@ -45,6 +46,9 @@ function App() {
 
         {/* Rota do painel lateral */}
         <Route path="/lateral/:id" element={<LateralPanel />} />
+
+        {/* Rota do Scoreboard/Placar TV */}
+        <Route path="/scoreboard/:id/:quadra" element={<ScoreboardTV />} />
       </Routes>
     </BrowserRouter>
   );

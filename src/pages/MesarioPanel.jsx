@@ -463,7 +463,10 @@ export function MesarioPanel() {
             <div className={`w-2 h-2 rounded-full ${lateraisConectados.length > 0 ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
             {lateraisConectados.length > 0 ? `✓ ${lateraisConectados.length}/5 Laterais` : '○ Aguardando...'}
           </div>
-          <button className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors border border-gray-700">
+          <button 
+            onClick={() => window.open(`/scoreboard/${id}/${minhaQuadra.numero_quadra}`, '_blank')}
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors border border-gray-700"
+          >
             <MonitorUp size={16} /> {t('placar_tv')}
           </button>
         </div>
