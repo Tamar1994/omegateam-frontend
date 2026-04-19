@@ -187,7 +187,16 @@ export function LateralPanel() {
         return;
       }
 
-      // 🎯 NOVA LUTA INICIADA - determina tipo de joystick
+      // � LUTA FINALIZADA - Reseta e aguarda próxima luta
+      if (data.status === 'luta_finalizada') {
+        console.log('🏁 LUTA FINALIZADA! Aguardando próxima...');
+        fazerVibracaoLonga();
+        setLuta(null);
+        setStatus('pronto');
+        return;
+      }
+
+      // �🎯 NOVA LUTA INICIADA - determina tipo de joystick
       if (data.status === 'luta_iniciada') {
         console.log(`🎬 LUTA INICIADA RECEBIDA!`);
         console.log(`  - Luta ID: ${data.luta_id}`);

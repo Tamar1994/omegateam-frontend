@@ -282,6 +282,17 @@ export function MesarioPanel() {
           faltas_blue: placar.blueFaltas
         })
       });
+      
+      // 📡 NOTIFICAR LATERAIS QUE LUTA ACABOU
+      try {
+        await fetch(`${API_BASE_URL}/api/lutas/${lutaAtual._id}/notificar-fim-luta`, {
+          method: 'POST'
+        });
+        console.log('✅ Laterais notificados que luta finalizou');
+      } catch (err) {
+        console.error('❌ Erro ao notificar fim de luta:', err);
+      }
+      
       puxarProximaLuta(); 
     } catch {
       alert(t('erro_salvar_resultado_banco'));
