@@ -15,7 +15,7 @@ import { useParams, useNavigate } from 'react-router-dom';
  */
 export function LateralPanel() {
   const { t } = useTranslation();
-  const { campId } = useParams();
+  const { id: campId } = useParams();  // ✅ A rota usa "/lateral/:id", não ":campId"
   const navigate = useNavigate();
 
   // ==========================================
