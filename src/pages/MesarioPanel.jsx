@@ -300,6 +300,9 @@ export function MesarioPanel() {
         console.error('❌ Erro ao notificar fim de luta:', err);
       }
       
+      // 📺 LIMPAR TOKEN
+      setTokenScoreboard(null);
+      
       puxarProximaLuta(); 
     } catch {
       alert(t('erro_salvar_resultado_banco'));
@@ -681,6 +684,7 @@ export function MesarioPanel() {
                 </div>
               )}
             </div>
+            </div>
           </section>
 
         ) : (
@@ -688,6 +692,25 @@ export function MesarioPanel() {
           // LAYOUT PARA KYORUGUI (LUTA VERMELHO VS AZUL)
           // ==========================================
           <>
+            {/* 📺 CÓDIGO SCOREBOARD */}
+            {tokenScoreboard && (
+              <div className="lg:col-span-12 bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-2 border-purple-500 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-purple-300 font-bold text-sm">📺 CÓDIGO SCOREBOARD PARA TV</p>
+                  <p className="text-gray-400 text-xs mt-1">Compartilhe este código para abrir o Scoreboard na TV</p>
+                </div>
+                <div 
+                  onClick={() => {
+                    navigator.clipboard.writeText(tokenScoreboard);
+                    alert('Código copiado!');
+                  }}
+                  className="bg-purple-700 hover:bg-purple-600 cursor-pointer text-white px-6 py-3 rounded-lg font-black text-2xl tracking-widest transition-colors"
+                >
+                  {tokenScoreboard}
+                </div>
+              </div>
+            )}
+
             {/* INDICADOR DE PONTO RECEBIDO */}
             {ultimoPontoRecebido && (
               <div className={`lg:col-span-12 flex items-center justify-center gap-3 py-4 rounded-xl font-black text-xl tracking-widest uppercase animate-pulse ${
