@@ -207,6 +207,23 @@ export function MesarioPanel() {
         setStatusLuta('andamento');
         setModoWO(false);
         setTempoRodando(false);
+
+        // 🎬 NOTIFICAR OS LATERAIS SOBRE A LUTA
+        try {
+          console.log('📢 Notificando laterais sobre luta iniciada...');
+          await fetch(`${API_BASE_URL}/api/lutas/${dadosLuta._id}/notificar-laterais`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              modalidade: dadosLuta.modalidade,
+              atleta_vermelho: dadosLuta.atleta_vermelho,
+              atleta_azul: dadosLuta.atleta_azul
+            })
+          });
+          console.log('✅ Laterais notificados');
+        } catch (err) {
+          console.error('❌ Erro ao notificar laterais:', err);
+        }
       } else {
         alert(t('nao_ha_mais_lutas_fila'));
         setQuadraAberta(false);

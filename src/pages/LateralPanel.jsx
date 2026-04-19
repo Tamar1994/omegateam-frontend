@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { JoystickPoomsae } from '../components/JoystickPoomsae';
 
 /**
  * LateralPanel - Painel do Árbitro Lateral (Joystick)
@@ -177,6 +178,20 @@ export function LateralPanel() {
       const data = JSON.parse(event.data);
       console.log('📨 Mensagem recebida:', data);
 
+      // 🎯 NOVA LUTA INICIADA - determina tipo de joystick
+      if (data.status === 'luta_iniciada') {
+        console.log(`🎬 Luta iniciada: ${data.modalidade}`);
+        setLuta({
+          id: data.luta_id,
+          modalidade: data.modalidade, // 'Kyorugui' ou 'Poomsae'
+          atleta_vermelho: data.atleta_vermelho,
+          atleta_azul: data.atleta_azul
+        });
+        setStatus('pronto');
+        fazerVibracaoMedia();
+        return;
+      }
+
       if (data.status === 'clique_recebido') {
         // Vibração curta para confirmar recebimento
         fazerVibracaoSimples();
@@ -327,6 +342,27 @@ export function LateralPanel() {
   };
 
   // ==========================================
+  // MARCAR COMO PRONTO (AGUARDANDO LUTA)
+  // ==========================================
+  const marcarProto = async () => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      console.error('❌ WebSocket não conectado!');
+      return;
+    }
+
+    console.log('✋ Marcando como pronto...');
+    fazerVibracaoMedia();
+    
+    ws.current.send(JSON.stringify({
+      tipo: 'lateral_pronto',
+      email: usuario.email,
+      timestamp: new Date().toISOString()
+    }));
+
+    setStatus('aguardando_luta');
+  };
+
+  // ==========================================
   // ENVIAR CLIQUE VIA WEBSOCKET
   // ==========================================
 
@@ -438,108 +474,159 @@ export function LateralPanel() {
         )}
       </div>
 
-      {/* Área Principal - Joystick */}
-      <div className="flex-1 flex items-center justify-center p-6 md:p-12">
-        <div className="grid grid-cols-2 gap-6 w-full max-w-4xl">
-          {/* BOTÕES VERMELHO */}
-          <div className="space-y-4">
-            <h2 className="text-center font-bold text-red-400 text-lg">
-              {t('cor_vermelha', { cor: 'Vermelho' })} 🔴
-            </h2>
-
-            {/* +1 Vermelho */}
-            <button
-              onClick={() => enviarClique('+1', 'vermelho')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
-            >
-              <div className="text-5xl md:text-6xl">+1</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_baixo', { ponto: 'Ponto' })}
+      {/* Área Principal - Condicional */}
+      {!luta ? (
+        // ==========================================
+        // TELA DE AGUARDANDO
+        // ==========================================
+        <div className="flex-1 flex items-center justify-center p-6 md:p-12">
+          <div className="max-w-md w-full">
+            <div className="bg-gray-800 border-2 border-gray-700 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-omega-red border-t-white"></div>
               </div>
-            </button>
-
-            {/* +2 Vermelho */}
-            <button
-              onClick={() => enviarClique('+2', 'vermelho')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
-            >
-              <div className="text-5xl md:text-6xl">+2</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_chute', { ponto: 'Chute' })}
+              
+              <div>
+                <h2 className="text-3xl font-black mb-2">{t('check_in_equipe')}</h2>
+                <p className="text-gray-400 text-sm">{t('aguardando_juizes_sincronizar')}</p>
               </div>
-            </button>
 
-            {/* +3 Vermelho */}
-            <button
-              onClick={() => enviarClique('+3', 'vermelho')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-red-700 hover:bg-red-600 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-500"
-            >
-              <div className="text-5xl md:text-6xl">+3</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_cabeca', { ponto: 'Cabeça' })}
+              <div className="bg-black/40 rounded-2xl p-4 border border-omega-red/30 space-y-2">
+                <p className="text-xs text-gray-400">Status da Conexão:</p>
+                <p className="text-sm font-bold">
+                  <span className={conectado ? 'text-green-400' : 'text-red-400'}>
+                    {conectado ? '✅ Conectado' : '❌ Desconectado'}
+                  </span>
+                </p>
               </div>
-            </button>
-          </div>
 
-          {/* BOTÕES AZUL */}
-          <div className="space-y-4">
-            <h2 className="text-center font-bold text-blue-400 text-lg">
-              {t('cor_azul', { cor: 'Azul' })} 🔵
-            </h2>
+              <button
+                onClick={marcarProto}
+                disabled={!conectado}
+                className="w-full py-6 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed
+                           rounded-2xl font-black text-xl tracking-widest uppercase transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-green-400"
+              >
+                ✋ {t('estou_pronto')}
+              </button>
 
-            {/* +1 Azul */}
-            <button
-              onClick={() => enviarClique('+1', 'azul')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
-            >
-              <div className="text-5xl md:text-6xl">+1</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_baixo', { ponto: 'Ponto' })}
-              </div>
-            </button>
-
-            {/* +2 Azul */}
-            <button
-              onClick={() => enviarClique('+2', 'azul')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
-            >
-              <div className="text-5xl md:text-6xl">+2</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_chute', { ponto: 'Chute' })}
-              </div>
-            </button>
-
-            {/* +3 Azul */}
-            <button
-              onClick={() => enviarClique('+3', 'azul')}
-              disabled={bloqueado || !conectado}
-              className="w-full py-8 md:py-12 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 
-                         rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
-                         hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-500"
-            >
-              <div className="text-5xl md:text-6xl">+3</div>
-              <div className="text-xs md:text-sm mt-2 opacity-80">
-                {t('ponto_cabeca', { ponto: 'Cabeça' })}
-              </div>
-            </button>
+              <p className="text-xs text-gray-500">
+                Clique em "ESTOU PRONTO" quando estiver pronto para a luta. O mesário puxará a luta em seguida.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : luta.modalidade === 'Poomsae' ? (
+        // ==========================================
+        // JOYSTICK POOMSAE
+        // ==========================================
+        <JoystickPoomsae luta={luta} usuario={usuario} ws={ws} t={t} />
+      ) : (
+        // ==========================================
+        // JOYSTICK KYORUGUI (PADRÃO)
+        // ==========================================
+        <div className="flex-1 flex items-center justify-center p-6 md:p-12">
+          <div className="grid grid-cols-2 gap-6 w-full max-w-4xl">
+            {/* BOTÕES VERMELHO */}
+            <div className="space-y-4">
+              <h2 className="text-center font-bold text-red-400 text-lg">
+                {t('cor_vermelha', { cor: 'Vermelho' })} 🔴
+              </h2>
+
+              {/* +1 Vermelho */}
+              <button
+                onClick={() => enviarClique('+1', 'vermelho')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
+              >
+                <div className="text-5xl md:text-6xl">+1</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_baixo', { ponto: 'Ponto' })}
+                </div>
+              </button>
+
+              {/* +2 Vermelho */}
+              <button
+                onClick={() => enviarClique('+2', 'vermelho')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-400"
+              >
+                <div className="text-5xl md:text-6xl">+2</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_chute', { ponto: 'Chute' })}
+                </div>
+              </button>
+
+              {/* +3 Vermelho */}
+              <button
+                onClick={() => enviarClique('+3', 'vermelho')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-red-700 hover:bg-red-600 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-red-500"
+              >
+                <div className="text-5xl md:text-6xl">+3</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_cabeca', { ponto: 'Cabeça' })}
+                </div>
+              </button>
+            </div>
+
+            {/* BOTÕES AZUL */}
+            <div className="space-y-4">
+              <h2 className="text-center font-bold text-blue-400 text-lg">
+                {t('cor_azul', { cor: 'Azul' })} 🔵
+              </h2>
+
+              {/* +1 Azul */}
+              <button
+                onClick={() => enviarClique('+1', 'azul')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
+              >
+                <div className="text-5xl md:text-6xl">+1</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_baixo', { ponto: 'Ponto' })}
+                </div>
+              </button>
+
+              {/* +2 Azul */}
+              <button
+                onClick={() => enviarClique('+2', 'azul')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-400"
+              >
+                <div className="text-5xl md:text-6xl">+2</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_chute', { ponto: 'Chute' })}
+                </div>
+              </button>
+
+              {/* +3 Azul */}
+              <button
+                onClick={() => enviarClique('+3', 'azul')}
+                disabled={bloqueado || !conectado}
+                className="w-full py-8 md:py-12 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-600 
+                           rounded-2xl font-bold text-2xl md:text-4xl transition-all transform 
+                           hover:scale-105 active:scale-95 shadow-2xl border-2 border-blue-500"
+              >
+                <div className="text-5xl md:text-6xl">+3</div>
+                <div className="text-xs md:text-sm mt-2 opacity-80">
+                  {t('ponto_cabeca', { ponto: 'Cabeça' })}
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Log de Cliques Recentes */}
       {ultimos_cliques.length > 0 && (
