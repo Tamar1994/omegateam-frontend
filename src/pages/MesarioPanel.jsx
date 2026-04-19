@@ -39,6 +39,7 @@ export function MesarioPanel() {
   // ESTADOS DO WEBSOCKET (JOYSTICK)
   // ==========================================
   const [ultimoPontoRecebido, setUltimoPontoRecebido] = useState(null);
+  const [lateraisConectados, setLateraisConectados] = useState([]);
   const ws = useRef(null);
 
   // ==========================================
@@ -125,7 +126,14 @@ export function MesarioPanel() {
 
       ws.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('📨 Ponto recebido via WebSocket:', data);
+        console.log('📨 Mensagem WebSocket recebida:', data);
+
+        // ✅ NOVO: Atualizar status dos laterais conectados
+        if (data.status === 'laterais_atualizacao') {
+          console.log(`🔄 Laterais atualizados: ${data.total_laterais} conectados`, data.laterais_conectados);
+          setLateraisConectados(data.laterais_conectados || []);
+          return; // Não processar como ponto
+        }
 
         // Se for ponto validado por Coincidence Window, atualizar automaticamente
         if (data.status === 'ponto_validado' && data.cor && data.pontos) {
