@@ -518,7 +518,7 @@ export function MesarioPanel() {
             {lateraisConectados.length > 0 ? `✓ ${lateraisConectados.length}/5 Laterais` : '○ Aguardando...'}
           </div>
           <button 
-            onClick={() => window.open(`/scoreboard/${id}/${minhaQuadra.numero_quadra}`, '_blank')}
+            onClick={() => window.open(`/scoreboard`, '_blank')}
             className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors border border-gray-700"
           >
             <MonitorUp size={16} /> {t('placar_tv')}
