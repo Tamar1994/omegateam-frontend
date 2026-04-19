@@ -179,6 +179,14 @@ export function LateralPanel() {
       console.log('📨 Mensagem recebida:', data);
       console.log('📊 Estado atual - Luta:', luta, 'Status:', status, 'Conectado:', conectado);
 
+      // ✅ LATERAL PRONTO CONFIRMADO - O Mesário agora sabe que você está pronto
+      if (data.status === 'pronto_confirmado') {
+        console.log('✅ VOCÊ ESTÁ PRONTO! O Mesário foi notificado');
+        fazerVibracaoSimples();
+        setStatus('pronto');
+        return;
+      }
+
       // 🎯 NOVA LUTA INICIADA - determina tipo de joystick
       if (data.status === 'luta_iniciada') {
         console.log(`🎬 LUTA INICIADA RECEBIDA!`);
