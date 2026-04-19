@@ -440,7 +440,12 @@ export function MesarioPanel() {
             <p className="text-gray-400 text-sm">{t('luta_numero_categoria', { ordem: lutaAtual.ordem_luta, categoria: lutaAtual.nome_categoria })}</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {/* 🔄 Indicador de Laterais Conectados */}
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm ${lateraisConectados.length > 0 ? 'bg-green-900/30 text-green-400 border border-green-600' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+            <div className={`w-2 h-2 rounded-full ${lateraisConectados.length > 0 ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></div>
+            {lateraisConectados.length > 0 ? `✓ ${lateraisConectados.length}/5 Laterais` : '○ Aguardando...'}
+          </div>
           <button className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors border border-gray-700">
             <MonitorUp size={16} /> {t('placar_tv')}
           </button>
