@@ -177,10 +177,15 @@ export function LateralPanel() {
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
       console.log('📨 Mensagem recebida:', data);
+      console.log('📊 Estado atual - Luta:', luta, 'Status:', status, 'Conectado:', conectado);
 
       // 🎯 NOVA LUTA INICIADA - determina tipo de joystick
       if (data.status === 'luta_iniciada') {
-        console.log(`🎬 Luta iniciada: ${data.modalidade}`);
+        console.log(`🎬 LUTA INICIADA RECEBIDA!`);
+        console.log(`  - Luta ID: ${data.luta_id}`);
+        console.log(`  - Modalidade: ${data.modalidade}`);
+        console.log(`  - Atletas: ${data.atleta_vermelho} vs ${data.atleta_azul}`);
+        
         setLuta({
           id: data.luta_id,
           modalidade: data.modalidade, // 'Kyorugui' ou 'Poomsae'
@@ -189,6 +194,7 @@ export function LateralPanel() {
         });
         setStatus('pronto');
         fazerVibracaoMedia();
+        console.log('✅ Joystick renderizado');
         return;
       }
 

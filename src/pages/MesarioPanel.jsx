@@ -84,10 +84,23 @@ export function MesarioPanel() {
 
   const todosProntos = () => {
     if (!minhaQuadra) return false;
+    
+    // Verificar se há pelo menos 1 lateral definido
+    let temLateraisDefinidos = false;
+    
     for (let i = 1; i <= 5; i++) {
-      if (minhaQuadra[`lateral${i}_email`] && !minhaQuadra[`lateral${i}_ready`]) return false;
+      const emailLateral = minhaQuadra[`lateral${i}_email`];
+      const isReady = minhaQuadra[`lateral${i}_ready`];
+      
+      if (emailLateral) {
+        temLateraisDefinidos = true;
+        // Se tem lateral MAS não está pronto, retorna false
+        if (!isReady) return false;
+      }
     }
-    return true; 
+    
+    // ✅ Todos os laterals que existem estão prontos E há pelo menos 1 lateral
+    return temLateraisDefinidos;
   };
 
   // ==========================================
