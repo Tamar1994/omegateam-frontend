@@ -16,7 +16,8 @@ export function Noticias() {
     try {
       setCarregando(true);
       setErro(null);
-      const resposta = await fetch(`${import.meta.env.VITE_API_URL}/api/noticias?limit=50`);
+      const apiUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL;
+      const resposta = await fetch(`${apiUrl}/api/noticias?limit=50`);
       
       if (!resposta.ok) throw new Error('Erro ao buscar notícias');
       

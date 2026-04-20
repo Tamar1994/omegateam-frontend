@@ -15,7 +15,8 @@ export function MuralNoticias() {
   const buscarNoticias = async () => {
     try {
       setCarregando(true);
-      const resposta = await fetch(`${import.meta.env.VITE_API_URL}/api/noticias?limit=3`);
+      const apiUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL;
+      const resposta = await fetch(`${apiUrl}/api/noticias?limit=3`);
       const dados = await resposta.json();
       
       if (dados.noticias && Array.isArray(dados.noticias)) {
