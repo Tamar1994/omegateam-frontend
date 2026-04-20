@@ -126,6 +126,50 @@ export function LateralPanel() {
   }, []);
 
   // ==========================================
+  // BUSCAR LUTA ATUAL (função auxiliar)
+  // ==========================================
+
+  const buscarLutaAtual = async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      console.log('🔍 Buscando luta atual para campId:', campId, 'from:', baseUrl);
+      
+      const response = await fetch(`${baseUrl}/api/campeonatos/${campId}/luta-atual`);
+      
+      if (!response.ok) {
+        console.error('❌ Erro ao buscar luta atual. Status:', response.status);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('📨 Resposta do servidor:', data);
+      
+      if (data.luta && data.luta.id) {
+        console.log('✅ LUTA EM ANDAMENTO ENCONTRADA!');
+        console.log('   - ID:', data.luta.id);
+        console.log('   - Modalidade:', data.luta.modalidade);
+        console.log('   - Atleta Vermelho:', data.luta.atleta_vermelho);
+        console.log('   - Atleta Azul:', data.luta.atleta_azul);
+        
+        setLuta({
+          id: data.luta.id,
+          modalidade: data.luta.modalidade,
+          atleta_vermelho: data.luta.atleta_vermelho,
+          atleta_azul: data.luta.atleta_azul
+        });
+        fazerVibracaoMedia();
+      } else {
+        console.log('⏳ Nenhuma luta em andamento. Aguardando...');
+        setLuta(null);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar luta atual:', error);
+      console.error('   - Mensagem:', error.message);
+      console.error('   - Stack:', error.stack);
+    }
+  };
+
+  // ==========================================
   // WEBSOCKET
   // ==========================================
 
@@ -175,33 +219,6 @@ export function LateralPanel() {
       
       // 🎯 AUTO-RENDERIZAR JOYSTICK SE HÁ LUTA EM ANDAMENTO
       buscarLutaAtual();
-    };
-
-    // Função auxiliar para buscar luta atual do servidor
-    const buscarLutaAtual = async () => {
-      try {
-        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-        const response = await fetch(`${baseUrl}/api/campeonatos/${campId}/luta-atual`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.luta && data.luta.id) {
-            console.log('🎬 LUTA EM ANDAMENTO ENCONTRADA! Auto-renderizando joystick...');
-            setLuta({
-              id: data.luta.id,
-              modalidade: data.luta.modalidade,
-              atleta_vermelho: data.luta.atleta_vermelho,
-              atleta_azul: data.luta.atleta_azul
-            });
-            fazerVibracaoMedia();
-          } else {
-            console.log('⏳ Aguardando próxima luta...');
-            setLuta(null);
-          }
-        }
-      } catch (error) {
-        console.error('❌ Erro ao buscar luta atual:', error);
-      }
     };
 
     ws.current.onmessage = (event) => {

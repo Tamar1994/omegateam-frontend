@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Minus, Plus } from 'lucide-react';
 
 /**
@@ -12,11 +12,27 @@ import { Minus, Plus } from 'lucide-react';
  * - Accuracy Deduct (Dedução de Precisão)
  */
 export function JoystickPoomsae({ luta, usuario, ws, t }) {
+  // ✅ Debug: Verificar props
+  useEffect(() => {
+    console.log('🎮 JoystickPoomsae MONTADO:', { luta, usuario, ws: ws?.current, t });
+  }, []);
+
   // ✅ Guard: Se luta não chegou ou não tem dados necessários
   if (!luta || !luta.id) {
+    console.warn('⚠️ JoystickPoomsae: Luta inválida:', luta);
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <p className="text-gray-400 text-lg">Aguardando dados da luta...</p>
+      </div>
+    );
+  }
+
+  // ✅ Guard: Se ws não está disponível
+  if (!ws || !ws.current) {
+    console.error('❌ JoystickPoomsae: WebSocket não disponível!');
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="text-red-400 text-lg">Erro: WebSocket não conectado. Tente reconectar.</p>
       </div>
     );
   }
@@ -94,26 +110,32 @@ export function JoystickPoomsae({ luta, usuario, ws, t }) {
   };
 
   const enviarNota = (cor) => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      console.error('❌ WebSocket não conectado!');
-      return;
+    try {
+      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket não conectado! ReadyState:', ws.current?.readyState);
+        alert('Erro: WebSocket desconectado. Reconecte e tente novamente.');
+        return;
+      }
+
+      const deducoes = cor === 'vermelho' ? dedutoesVermelho : dedutoesAzul;
+      const nota = cor === 'vermelho' ? notaVermelho : notaAzul;
+
+      const dados = {
+        tipo: 'poomsae_nota',
+        luta_id: luta.id,
+        juiz_email: usuario?.email,
+        cor,
+        nota: parseFloat(nota),
+        deducoes,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('📤 Enviando nota Poomsae:', dados);
+      ws.current.send(JSON.stringify(dados));
+    } catch (error) {
+      console.error('❌ Erro ao enviar nota:', error);
+      alert('Erro ao enviar nota. Verifique a conexão.');
     }
-
-    const deducoes = cor === 'vermelho' ? dedutoesVermelho : dedutoesAzul;
-    const nota = cor === 'vermelho' ? notaVermelho : notaAzul;
-
-    const dados = {
-      tipo: 'poomsae_nota',
-      luta_id: luta.id,
-      juiz_email: usuario?.email,
-      cor,
-      nota: parseFloat(nota),
-      deducoes,
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('📤 Enviando nota Poomsae:', dados);
-    ws.current.send(JSON.stringify(dados));
   };
 
   const renderizarCor = (cor) => {
