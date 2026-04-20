@@ -153,18 +153,23 @@ export function MesarioPanel() {
                 console.error(`❌ LATERAL DESCONECTOU: ${email}`);
                 setAlertaLateralCaiu(email);
                 
-                // ⏸️ PAUSAR A LUTA SE ESTIVER EM ANDAMENTO
-                if (quadraAberta) {
-                  console.error('⏸️ PAUSANDO LUTA - Lateral caiu durante a luta!');
-                  setQuadraAberta(false);
+                // ⏸️ PAUSAR O CRONÔMETRO (MAS DEIXAR QUADRA ABERTA)
+                if (tempoRodando) {
+                  console.error('⏸️ PAUSANDO CRONÔMETRO - Lateral caiu durante a luta!');
                   setTempoRodando(false);
                 }
                 
-                // Limpar alerta após 5 segundos
-                setTimeout(() => setAlertaLateralCaiu(null), 5000);
+                // Limpar alerta após 10 segundos
+                setTimeout(() => setAlertaLateralCaiu(null), 10000);
                 break;
               }
             }
+          }
+          
+          // 🟢 LATERAL RECONECTOU - LIMPAR ALERTA E PERMITIR RETOMAR
+          if (lateraisConectados.length < (data.laterais_conectados || []).length) {
+            console.log('✅ LATERAL RECONECTOU!');
+            setAlertaLateralCaiu(null);
           }
           
           setLateraisConectados(data.laterais_conectados || []);
@@ -441,6 +446,26 @@ export function MesarioPanel() {
 
         <main className="flex-1 flex flex-col items-center justify-center p-6">
           <div className="bg-gray-800 border-2 border-gray-700 rounded-3xl p-8 max-w-2xl w-full shadow-2xl">
+            
+            {/* 📺 CÓDIGO SCOREBOARD - ANTES DE ABRIR QUADRA */}
+            {tokenScoreboard && (
+              <div className="bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-2 border-purple-500 rounded-xl p-4 flex items-center justify-between mb-8">
+                <div>
+                  <p className="text-purple-300 font-bold text-sm">📺 CÓDIGO SCOREBOARD PARA TV</p>
+                  <p className="text-gray-400 text-xs mt-1">Compartilhe este código ANTES de abrir a quadra</p>
+                </div>
+                <div 
+                  onClick={() => {
+                    navigator.clipboard.writeText(tokenScoreboard);
+                    alert('Código copiado!');
+                  }}
+                  className="bg-purple-700 hover:bg-purple-600 cursor-pointer text-white px-6 py-3 rounded-lg font-black text-2xl tracking-widest transition-colors"
+                >
+                  {tokenScoreboard}
+                </div>
+              </div>
+            )}
+
             <div className="text-center mb-8">
               <Users size={60} className="mx-auto text-blue-500 mb-4" />
               <h2 className="text-3xl font-black mb-2">{t('check_in_equipe')}</h2>
@@ -534,25 +559,6 @@ export function MesarioPanel() {
           // ==========================================
           <section className="lg:col-span-12 space-y-6">
             
-            {/* 📺 CÓDIGO SCOREBOARD */}
-            {tokenScoreboard && (
-              <div className="bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-2 border-purple-500 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-purple-300 font-bold text-sm">📺 CÓDIGO SCOREBOARD PARA TV</p>
-                  <p className="text-gray-400 text-xs mt-1">Compartilhe este código para abrir o Scoreboard na TV</p>
-                </div>
-                <div 
-                  onClick={() => {
-                    navigator.clipboard.writeText(tokenScoreboard);
-                    alert('Código copiado!');
-                  }}
-                  className="bg-purple-700 hover:bg-purple-600 cursor-pointer text-white px-6 py-3 rounded-lg font-black text-2xl tracking-widest transition-colors"
-                >
-                  {tokenScoreboard}
-                </div>
-              </div>
-            )}
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* LADO VERMELHO (CHONG) */}
@@ -609,6 +615,18 @@ export function MesarioPanel() {
 
             {/* CONTROLES DO MESÁRIO (MÁQUINA DE ESTADOS DO POOMSAE) */}
             <div className="lg:col-span-12 bg-gray-800 rounded-2xl p-6 border-2 border-gray-700 flex flex-col items-center shadow-xl mt-4">
+              
+              {/* 🔴 ALERTA: LATERAL DESCONECTOU DURANTE A LUTA */}
+              {alertaLateralCaiu && (
+                <div className="w-full bg-red-900/60 border-3 border-red-500 rounded-xl p-4 text-center mb-6 animate-pulse">
+                  <p className="text-red-300 font-black text-lg">
+                    ⚠️ LATERAL DESCONECTOU!
+                  </p>
+                  <p className="text-xs text-red-400 mt-2">A luta foi pausada. Aguarde a reconexão do lateral...</p>
+                  <p className="text-sm text-red-300 mt-2 font-bold">{alertaLateralCaiu}</p>
+                </div>
+              )}
+
               {statusLuta === 'encerrada' ? (
                 <div className="text-center w-full max-w-md">
                   <Trophy size={60} className="text-yellow-400 mx-auto mb-4" />
@@ -689,22 +707,14 @@ export function MesarioPanel() {
           // LAYOUT PARA KYORUGUI (LUTA VERMELHO VS AZUL)
           // ==========================================
           <>
-            {/* 📺 CÓDIGO SCOREBOARD */}
-            {tokenScoreboard && (
-              <div className="lg:col-span-12 bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border-2 border-purple-500 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-purple-300 font-bold text-sm">📺 CÓDIGO SCOREBOARD PARA TV</p>
-                  <p className="text-gray-400 text-xs mt-1">Compartilhe este código para abrir o Scoreboard na TV</p>
-                </div>
-                <div 
-                  onClick={() => {
-                    navigator.clipboard.writeText(tokenScoreboard);
-                    alert('Código copiado!');
-                  }}
-                  className="bg-purple-700 hover:bg-purple-600 cursor-pointer text-white px-6 py-3 rounded-lg font-black text-2xl tracking-widest transition-colors"
-                >
-                  {tokenScoreboard}
-                </div>
+            {/* 🔴 ALERTA: LATERAL DESCONECTOU DURANTE A LUTA */}
+            {alertaLateralCaiu && (
+              <div className="lg:col-span-12 bg-red-900/60 border-3 border-red-500 rounded-xl p-4 text-center mb-6 animate-pulse">
+                <p className="text-red-300 font-black text-lg">
+                  ⚠️ LATERAL DESCONECTOU!
+                </p>
+                <p className="text-xs text-red-400 mt-2">A luta foi pausada. Aguarde a reconexão do lateral...</p>
+                <p className="text-sm text-red-300 mt-2 font-bold">{alertaLateralCaiu}</p>
               </div>
             )}
 

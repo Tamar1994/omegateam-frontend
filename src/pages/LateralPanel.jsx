@@ -172,6 +172,36 @@ export function LateralPanel() {
       console.log('✅ WebSocket ABERTO e CONECTADO!');
       setConectado(true);
       setStatus('pronto');
+      
+      // 🎯 AUTO-RENDERIZAR JOYSTICK SE HÁ LUTA EM ANDAMENTO
+      buscarLutaAtual();
+    };
+
+    // Função auxiliar para buscar luta atual do servidor
+    const buscarLutaAtual = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        const response = await fetch(`${baseUrl}/api/campeonatos/${campId}/luta-atual`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.luta && data.luta.id) {
+            console.log('🎬 LUTA EM ANDAMENTO ENCONTRADA! Auto-renderizando joystick...');
+            setLuta({
+              id: data.luta.id,
+              modalidade: data.luta.modalidade,
+              atleta_vermelho: data.luta.atleta_vermelho,
+              atleta_azul: data.luta.atleta_azul
+            });
+            fazerVibracaoMedia();
+          } else {
+            console.log('⏳ Aguardando próxima luta...');
+            setLuta(null);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar luta atual:', error);
+      }
     };
 
     ws.current.onmessage = (event) => {
