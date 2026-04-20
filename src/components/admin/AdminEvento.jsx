@@ -273,11 +273,11 @@ export function AdminEvento({ evento, onVoltar }) {
         </div>
 
         {/* Configuração de Cronograma */}
-        <div className="flex flex-col gap-2 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-            {t('configurar_cronograma')}
+        <div className="w-full md:w-auto flex flex-col gap-3 bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border-2 border-blue-300 shadow-md">
+          <p className="text-sm font-black text-blue-800 uppercase tracking-wider">
+            📋 {t('configurar_cronograma')}
           </p>
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
             <label className="flex flex-col text-xs font-semibold text-gray-700">
               {t('quantidade_quadras')}:
               <input
@@ -291,7 +291,7 @@ export function AdminEvento({ evento, onVoltar }) {
                     num_quadras: parseInt(e.target.value)
                   })
                 }
-                className="border p-1.5 rounded outline-none w-16 text-center mt-1"
+                className="border-2 border-blue-300 p-2 rounded outline-none w-full text-center mt-1 font-bold"
               />
             </label>
             <label className="flex flex-col text-xs font-semibold text-gray-700">
@@ -305,10 +305,10 @@ export function AdminEvento({ evento, onVoltar }) {
                     horario_inicio: e.target.value
                   })
                 }
-                className="border p-1.5 rounded outline-none mt-1"
+                className="border-2 border-blue-300 p-2 rounded outline-none mt-1"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mt-5 cursor-pointer">
+            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer col-span-2 md:col-span-1">
               <input
                 type="checkbox"
                 checked={configCronograma.isolar_poomsae}
@@ -318,16 +318,16 @@ export function AdminEvento({ evento, onVoltar }) {
                     isolar_poomsae: e.target.checked
                   })
                 }
-                className="accent-omega-red"
+                className="accent-blue-600 w-4 h-4"
               />
-              {t('isolar_poomsae')}
+              <span className="text-xs">Isolar Poomsae</span>
             </label>
             <button
               onClick={handleGerarCronograma}
               disabled={loading}
-              className="px-6 py-2 bg-omega-red text-white font-bold rounded-lg hover:bg-red-700 shadow-md transition-colors mt-5 disabled:bg-red-400"
+              className="col-span-2 md:col-span-1 px-6 py-2 bg-gradient-to-r from-omega-red to-red-700 text-white font-black rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm uppercase tracking-wider"
             >
-              {loading ? t('gerando') : t('gerar_cronograma')}
+              {loading ? t('gerando') : '🎲 ' + t('gerar_cronograma')}
             </button>
           </div>
         </div>
