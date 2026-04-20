@@ -125,6 +125,50 @@ export function MesarioPanel() {
   };
 
   // ==========================================
+  // VERIFICAR POOMSAE INCOMPLETO
+  // ==========================================
+  const verificarPoomsaeIncompleto = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lutas/${lutaAtual._id}/joystick/status-poomsae`);
+      
+      if (response.ok) {
+        const status = await response.json();
+        
+        // Se há sessão incompleta
+        if (status.status === 'incompleto') {
+          console.warn('⚠️ POOMSAE INCOMPLETO DETECTADO:', status);
+          
+          // Mostrar alerta ao Mesário
+          const mensagem = `
+⚠️ SESSÃO DE POOMSAE INCOMPLETA ENCONTRADA!
+
+Accuracy Chong: ${status.accuracy.vermelho}
+Accuracy Hong: ${status.accuracy.azul}
+
+Apresentação Chong: ${status.apresentacao.vermelho}
+Apresentação Hong: ${status.apresentacao.azul}
+
+Tempo restante: ${status.tempo_restante_segundos}s
+
+Deseja RECUPERAR esta sessão?
+          `;
+          
+          if (window.confirm(mensagem)) {
+            console.log('✅ Recuperando sessão Poomsae incompleta...');
+            // WebSocket já está conectado, juízes podem reenviar notas
+          }
+        } else if (status.status === 'nao_existe') {
+          console.log('✅ Nenhuma sessão Poomsae em progresso');
+        }
+      } else {
+        console.error('❌ Erro ao verificar status Poomsae:', await response.text());
+      }
+    } catch (error) {
+      console.error('❌ Erro ao verificar Poomsae incompleto:', error);
+    }
+  };
+
+  // ==========================================
   // 2B. WEBSOCKET PARA PONTOS DO JOYSTICK
   // ==========================================
   useEffect(() => {
@@ -151,6 +195,9 @@ export function MesarioPanel() {
 
         ws.current.onopen = () => {
           console.log('✅ [Poomsae] WebSocket conectado');
+          
+          // ====== VERIFICAR SE HÁ POOMSAE INCOMPLETO ======
+          verificarPoomsaeIncompleto();
         };
 
         ws.current.onerror = (error) => {
