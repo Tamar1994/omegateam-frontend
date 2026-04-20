@@ -12,6 +12,7 @@ import { MesarioPanel } from './pages/MesarioPanel';
 import { LateralPanel } from './pages/LateralPanel';
 import { ScoreboardTV } from './pages/ScoreboardTV';
 import { ScoreboardTVToken } from './pages/ScoreboardTVToken';
+import { Noticias } from './pages/Noticias';
 import './i18n'; // Importa a configuração de i18n
 
 function App() {
@@ -53,6 +54,9 @@ function App() {
         
         {/* Rota do Scoreboard/Placar TV (dinâmica - antiga) */}
         <Route path="/scoreboard/:id/:quadra" element={<ScoreboardTV />} />
+
+        {/* Rota de notícias */}
+        <Route path="/noticias" element={<Noticias />} />
       </Routes>
     </BrowserRouter>
   );
