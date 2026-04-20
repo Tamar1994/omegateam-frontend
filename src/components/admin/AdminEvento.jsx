@@ -158,6 +158,45 @@ export function AdminEvento({ evento, onVoltar }) {
     }
   };
 
+  const handleSortearPoomsaes = async () => {
+    if (!window.confirm('Deseja sortear os Poomsaes para as categorias de Faixa Preta? Uma notícia será criada no mural.')) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/campeonatos/${evento._id}/sortear-poomsaes`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (res.ok) {
+        // Criar notícia no mural
+        const noticia = {
+          campeonato_id: evento._id,
+          titulo: `🎲 Poomsaes Sorteados - ${evento.nome}`,
+          conteudo: `Os Poomsaes oficiais foram sorteados para a competição! Consulte o scoreboard para ver os poomsaes de sua categoria.`,
+          tipo: 'sortear_poomsae',
+          data_criacao: new Date().toISOString()
+        };
+
+        await fetch(`${API_BASE_URL}/api/noticias`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(noticia)
+        });
+
+        alert('✅ Poomsaes sorteados com sucesso! Notícia criada no mural.');
+        await carregarDadosEvento();
+      } else {
+        alert('Erro ao sortear poomsaes.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao sortear poomsaes.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const gerarPDF = (lutas, modalidade) => {
     try {
       if (lutas.length === 0) return;
@@ -331,6 +370,15 @@ export function AdminEvento({ evento, onVoltar }) {
             </button>
           </div>
         </div>
+
+        {/* Sortear Poomsaes */}
+        <button
+          onClick={handleSortearPoomsaes}
+          disabled={loading}
+          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-800 text-white font-black rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm uppercase tracking-wider flex items-center gap-2 justify-center"
+        >
+          {loading ? '⏳ Sorteando...' : '✨ Sortear Poomsaes'}
+        </button>
       </div>
 
       {/* Estatísticas */}
