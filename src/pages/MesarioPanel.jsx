@@ -104,113 +104,178 @@ export function MesarioPanel() {
   };
 
   // ==========================================
-  // 2B. WEBSOCKET PARA PONTOS DO JOYSTICK (KYORUGUI)
+  // 2B. WEBSOCKET PARA PONTOS DO JOYSTICK
   // ==========================================
   useEffect(() => {
-    if (!quadraAberta || !lutaAtual || lutaAtual.modalidade === 'Poomsae') return;
+    if (!quadraAberta || !lutaAtual) return;
 
-    const conectarJoystickWebSocket = () => {
-      // Validação
-      if (!id || !minhaQuadra?.numero_quadra) {
-        console.error('❌ Erro: id ou numero_quadra não disponível');
-        return;
-      }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const lutaIdCodificado = encodeURIComponent(id);
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-      
-      // URL-encode seguro (luta_id pode ter caracteres especiais)
-      const lutaIdCodificado = encodeURIComponent(id);
-      const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${lutaIdCodificado}/${minhaQuadra.numero_quadra}`;
+    if (lutaAtual.modalidade === 'Poomsae') {
+      // ==========================================
+      // POOMSAE: WebSocket para receber notas dos juízes
+      // ==========================================
+      const connectPoomsaeSocket = () => {
+        if (!id) {
+          console.error('❌ [Poomsae] id não disponível');
+          return;
+        }
 
-      console.log('🔗 Conectando WebSocket Mesário:', wsUrl);
-      console.log('📍 Dados:', { id, lutaIdCodificado, numero_quadra: minhaQuadra.numero_quadra });
+        const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${lutaIdCodificado}`;
+        console.log('🔗 [Poomsae] Conectando WebSocket:', wsUrl);
+        
+        ws.current = new WebSocket(wsUrl);
 
-      ws.current = new WebSocket(wsUrl);
+        ws.current.onopen = () => {
+          console.log('✅ [Poomsae] WebSocket conectado');
+        };
 
-      ws.current.onopen = () => {
-        console.log('✅ WebSocket Mesário conectado');
-      };
+        ws.current.onerror = (error) => {
+          console.error('❌ [Poomsae] Erro WebSocket:', error);
+        };
 
-      ws.current.onerror = (error) => {
-        console.error('❌ Erro WebSocket Mesário:', error);
-        console.error('URL tentada:', wsUrl);
-      };
+        ws.current.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('📨 [Poomsae] Mensagem recebida:', data.tipo, data);
 
-      ws.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('📨 Mensagem WebSocket recebida:', data);
-
-        // ✅ NOVO: Atualizar status dos laterais conectados
-        if (data.status === 'laterais_atualizacao') {
-          console.log(`🔄 Laterais atualizados: ${data.total_laterais} conectados`, data.laterais_conectados);
-          
-          // 🔴 DETECTAR SE UM LATERAL CAIU
-          if (lateraisConectados.length > (data.laterais_conectados || []).length) {
-            // Encontrar qual lateral saiu
-            for (const email of lateraisConectados) {
-              if (!data.laterais_conectados?.includes(email)) {
-                console.error(`❌ LATERAL DESCONECTOU: ${email}`);
-                setAlertaLateralCaiu(email);
-                
-                // ⏸️ PAUSAR O CRONÔMETRO (MAS DEIXAR QUADRA ABERTA)
-                if (tempoRodando) {
-                  console.error('⏸️ PAUSANDO CRONÔMETRO - Lateral caiu durante a luta!');
-                  setTempoRodando(false);
-                }
-                
-                // Limpar alerta após 10 segundos
-                setTimeout(() => setAlertaLateralCaiu(null), 10000);
-                break;
+            // ✅ RESULTADO FINAL com notas dos juízes
+            if (data.tipo === 'poomsae_resultado_final') {
+              console.log('✅ [Poomsae] RESULTADO FINAL recebido!', data.resultado_final);
+              
+              const notas = data.resultado_final?.notas || {};
+              setPlacar({
+                round: 1,
+                chongP1: notas.vermelho?.p1 || notas.vermelho || 0,
+                hongP1: notas.azul?.p1 || notas.azul || 0,
+                chongP2: notas.vermelho?.p2 || 0,
+                hongP2: notas.azul?.p2 || 0
+              });
+              
+              setStatusLuta('encerrada');
+              const vencedorDeterminado = data.resultado_final?.vencedor === 'vermelho' ? 'red' : 'blue';
+              setVencedor(vencedorDeterminado);
+              
+              // Vibração para alertar do resultado
+              if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
               }
             }
-          }
-          
-          // 🟢 LATERAL RECONECTOU - LIMPAR ALERTA E PERMITIR RETOMAR
-          if (lateraisConectados.length < (data.laterais_conectados || []).length) {
-            console.log('✅ LATERAL RECONECTOU!');
-            setAlertaLateralCaiu(null);
-          }
-          
-          setLateraisConectados(data.laterais_conectados || []);
-          return; // Não processar como ponto
-        }
 
-        // Se for ponto validado por Coincidence Window, atualizar automaticamente
-        if (data.status === 'ponto_validado' && data.cor && data.pontos) {
-          setUltimoPontoRecebido(data);
-          
-          // Atualizar placar automaticamente
-          setPlacar(prev => {
-            const novosPlacar = { ...prev };
-            if (data.cor === 'vermelho') {
-              novosPlacar.redPontos += parseInt(data.pontos);
-            } else if (data.cor === 'azul') {
-              novosPlacar.bluePontos += parseInt(data.pontos);
+            // ✅ COMPUTANDO: Aguardando outros juízes
+            else if (data.tipo === 'poomsae_computando') {
+              console.log('⏳ [Poomsae] Aguardando outros juízes:', data);
             }
-            return novosPlacar;
-          });
 
-          // Fazer vibração se disponível
-          if (navigator.vibrate) {
-            navigator.vibrate([100, 50, 100]);
+            // ✅ STATUS DE LATERAIS/JUÍZES CONECTADOS
+            else if (data.tipo === 'laterais_atualizacao' || data.status === 'laterais_atualizacao') {
+              console.log('🔄 [Poomsae] Juízes conectados:', data.laterais_conectados);
+              setLateraisConectados(data.laterais_conectados || []);
+            }
+          } catch (e) {
+            console.error('❌ [Poomsae] Erro ao processar mensagem:', e);
+          }
+        };
+
+        ws.current.onclose = () => {
+          console.log('❌ [Poomsae] WebSocket desconectado');
+        };
+      };
+
+      connectPoomsaeSocket();
+    } else {
+      // ==========================================
+      // KYORUGUI: WebSocket para pontos
+      // ==========================================
+      const conectarJoystickWebSocket = () => {
+        if (!id || !minhaQuadra?.numero_quadra) {
+          console.error('❌ Erro: id ou numero_quadra não disponível');
+          return;
+        }
+
+        const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/mesario/${lutaIdCodificado}/${minhaQuadra.numero_quadra}`;
+
+        console.log('🔗 Conectando WebSocket Mesário:', wsUrl);
+        console.log('📍 Dados:', { id, lutaIdCodificado, numero_quadra: minhaQuadra.numero_quadra });
+
+        ws.current = new WebSocket(wsUrl);
+
+        ws.current.onopen = () => {
+          console.log('✅ WebSocket Mesário conectado');
+        };
+
+        ws.current.onerror = (error) => {
+          console.error('❌ Erro WebSocket Mesário:', error);
+          console.error('URL tentada:', wsUrl);
+        };
+
+        ws.current.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          console.log('📨 Mensagem WebSocket recebida:', data);
+
+          if (data.status === 'laterais_atualizacao') {
+            console.log(`🔄 Laterais atualizados: ${data.total_laterais} conectados`, data.laterais_conectados);
+            
+            if (lateraisConectados.length > (data.laterais_conectados || []).length) {
+              for (const email of lateraisConectados) {
+                if (!data.laterais_conectados?.includes(email)) {
+                  console.error(`❌ LATERAL DESCONECTOU: ${email}`);
+                  setAlertaLateralCaiu(email);
+                  
+                  if (tempoRodando) {
+                    console.error('⏸️ PAUSANDO CRONÔMETRO - Lateral caiu durante a luta!');
+                    setTempoRodando(false);
+                  }
+                  
+                  setTimeout(() => setAlertaLateralCaiu(null), 10000);
+                  break;
+                }
+              }
+            }
+            
+            if (lateraisConectados.length < (data.laterais_conectados || []).length) {
+              console.log('✅ LATERAL RECONECTOU!');
+              setAlertaLateralCaiu(null);
+            }
+            
+            setLateraisConectados(data.laterais_conectados || []);
+            return;
           }
 
-          // Limpar indicador de ponto após 2 segundos
-          setTimeout(() => setUltimoPontoRecebido(null), 2000);
-        }
+          if (data.status === 'ponto_validado' && data.cor && data.pontos) {
+            setUltimoPontoRecebido(data);
+            
+            setPlacar(prev => {
+              const novosPlacar = { ...prev };
+              if (data.cor === 'vermelho') {
+                novosPlacar.redPontos += parseInt(data.pontos);
+              } else if (data.cor === 'azul') {
+                novosPlacar.bluePontos += parseInt(data.pontos);
+              }
+              return novosPlacar;
+            });
+
+            if (navigator.vibrate) {
+              navigator.vibrate([100, 50, 100]);
+            }
+
+            setTimeout(() => setUltimoPontoRecebido(null), 2000);
+          }
+        };
+
+        ws.current.onerror = (error) => {
+          console.error('❌ Erro WebSocket Mesário:', error);
+        };
+
+        ws.current.onclose = () => {
+          console.log('❌ WebSocket Mesário desconectado');
+        };
       };
 
-      ws.current.onerror = (error) => {
-        console.error('❌ Erro WebSocket Mesário:', error);
-      };
-
-      ws.current.onclose = () => {
-        console.log('❌ WebSocket Mesário desconectado');
-      };
-    };
-
-    conectarJoystickWebSocket();
+      conectarJoystickWebSocket();
+    }
 
     return () => {
       if (ws.current) {
