@@ -42,6 +42,7 @@ export function MesarioPanel() {
   const [lateraisConectados, setLateraisConectados] = useState([]);
   const [alertaLateralCaiu, setAlertaLateralCaiu] = useState(null); // Armazena email do lateral que caiu
   const [tokenScoreboard, setTokenScoreboard] = useState(null); // Token para acesso ao Scoreboard
+  const [poomsaeStatus, setPoomsaeStatus] = useState(null); // Status atual do Poomsae (notas intermediárias)
   const ws = useRef(null);
 
   // ==========================================
@@ -101,6 +102,52 @@ export function MesarioPanel() {
     
     // ✅ Todos os laterals que existem estão prontos E há pelo menos 1 lateral
     return temLateraisDefinidos;
+  };
+
+  // ==========================================
+  // CARREGAR NOTAS INTERMEDIÁRIAS DO POOMSAE
+  // ==========================================
+  const carregarStatusPoomsae = async () => {
+    if (!lutaAtual || lutaAtual.modalidade !== 'Poomsae') return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lutas/${lutaAtual._id}/joystick/status-poomsae`);
+      
+      if (response.ok) {
+        const status = await response.json();
+        console.log('📊 Status Poomsae carregado:', status);
+        
+        setPoomsaeStatus(status);
+        
+        // Atualizar placar com as médias recebidas
+        if (status.status === 'em_progresso') {
+          const novasNotas = { ...placar };
+          
+          // Adicionar accuracy médias se existirem
+          if (status.accuracy.vermelho.media !== null) {
+            if (statusLuta === 'turno_chong_p1') {
+              novasNotas.chongP1 = status.accuracy.vermelho.media;
+            } else if (statusLuta === 'turno_chong_p2') {
+              novasNotas.chongP2 = status.accuracy.vermelho.media;
+            }
+          }
+          
+          if (status.accuracy.azul.media !== null) {
+            if (statusLuta === 'turno_hong_p1') {
+              novasNotas.hongP1 = status.accuracy.azul.media;
+            } else if (statusLuta === 'turno_hong_p2') {
+              novasNotas.hongP2 = status.accuracy.azul.media;
+            }
+          }
+          
+          setPlacar(novasNotas);
+        }
+      } else {
+        console.error('❌ Erro ao carregar status Poomsae');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar status Poomsae:', error);
+    }
   };
 
   // ==========================================
@@ -512,7 +559,18 @@ Deseja RECUPERAR esta sessão?
     return `${m}:${s}`;
   };
 
-  const toggleTempo = () => { if (statusLuta !== 'encerrada') setTempoRodando(!tempoRodando); };
+  const toggleTempo = () => {
+    if (statusLuta === 'encerrada') return;
+    
+    const novoEstado = !tempoRodando;
+    setTempoRodando(novoEstado);
+    
+    // Quando PAUSAR o tempo no Poomsae, carregar notas dos árbitros
+    if (!novoEstado && lutaAtual?.modalidade === 'Poomsae') {
+      console.log('⏸️ Pausando Poomsae - Carregando notas dos árbitros...');
+      carregarStatusPoomsae();
+    }
+  };
   
   const resetarRelogio = (s) => { 
     setTempoRodando(false); setModoWO(false); setTempo(s); 
@@ -830,17 +888,68 @@ Deseja RECUPERAR esta sessão?
                     <p className="text-xs text-gray-500 mt-3 text-center">{t('mesario_clica_avanca')}</p>
                   </div>
 
-                  {/* Botões para Teste de Nota (Simulando os Joysticks) */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-gray-400 font-bold uppercase text-sm mb-1 text-center">{t('simulador_juizes')}</span>
-                    <button onClick={() => setPlacar(p => ({...p, chongP1: 7.23}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P1 (7.23)</button>
-                    <button onClick={() => setPlacar(p => ({...p, hongP1: 7.10}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P1 (7.10)</button>
-                    {lutaAtual.poomsae_2 && (
+                  {/* Notas dos Árbitros / Status Poomsae */}
+                  <div className="flex flex-col gap-3 w-full max-w-sm">
+                    <span className="text-gray-400 font-bold uppercase text-sm text-center">{t('notas_arbitros')}</span>
+                    
+                    {poomsaeStatus?.status === 'em_progresso' ? (
                       <>
-                        <button onClick={() => setPlacar(p => ({...p, chongP2: 7.45}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P2 (7.45)</button>
-                        <button onClick={() => setPlacar(p => ({...p, hongP2: 7.30}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P2 (7.30)</button>
+                        {/* Exibir accuracy */}
+                        {(poomsaeStatus.accuracy?.vermelho?.media !== null || poomsaeStatus.accuracy?.azul?.media !== null) && (
+                          <div className="grid grid-cols-2 gap-2 mb-2">
+                            {statusLuta.includes('chong') && (
+                              <div className="bg-red-900/30 border border-red-700 rounded p-2 text-center">
+                                <p className="text-xs text-red-400 uppercase font-bold mb-1">Accuracy Chong</p>
+                                <p className="text-2xl font-black text-white">{poomsaeStatus.accuracy?.vermelho?.media?.toFixed(2) || '...'}</p>
+                                <p className="text-xs text-red-300">{poomsaeStatus.accuracy?.vermelho?.votos}</p>
+                              </div>
+                            )}
+                            {statusLuta.includes('hong') && (
+                              <div className="bg-blue-900/30 border border-blue-700 rounded p-2 text-center">
+                                <p className="text-xs text-blue-400 uppercase font-bold mb-1">Accuracy Hong</p>
+                                <p className="text-2xl font-black text-white">{poomsaeStatus.accuracy?.azul?.media?.toFixed(2) || '...'}</p>
+                                <p className="text-xs text-blue-300">{poomsaeStatus.accuracy?.azul?.votos}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Exibir apresentação se houver */}
+                        {(poomsaeStatus.apresentacao?.vermelho?.media || poomsaeStatus.apresentacao?.azul?.media) && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {statusLuta.includes('chong') && poomsaeStatus.apresentacao?.vermelho?.media && (
+                              <div className="bg-red-900/30 border border-red-700 rounded p-2 text-center text-xs">
+                                <p className="text-red-400 uppercase font-bold mb-1">Apresentação</p>
+                                <p className="text-lg font-black text-white">{poomsaeStatus.apresentacao?.vermelho?.media?.total?.toFixed(2)}</p>
+                              </div>
+                            )}
+                            {statusLuta.includes('hong') && poomsaeStatus.apresentacao?.azul?.media && (
+                              <div className="bg-blue-900/30 border border-blue-700 rounded p-2 text-center text-xs">
+                                <p className="text-blue-400 uppercase font-bold mb-1">Apresentação</p>
+                                <p className="text-lg font-black text-white">{poomsaeStatus.apresentacao?.azul?.media?.total?.toFixed(2)}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {!poomsaeStatus.todos_completos && (
+                          <p className="text-xs text-gray-400 text-center mt-2">Aguardando mais árbitros...</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Fallback: Botões de simulação */}
+                        <button onClick={() => setPlacar(p => ({...p, chongP1: 7.23}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P1 (7.23)</button>
+                        <button onClick={() => setPlacar(p => ({...p, hongP1: 7.10}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P1 (7.10)</button>
+                        {lutaAtual.poomsae_2 && (
+                          <>
+                            <button onClick={() => setPlacar(p => ({...p, chongP2: 7.45}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P2 (7.45)</button>
+                            <button onClick={() => setPlacar(p => ({...p, hongP2: 7.30}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P2 (7.30)</button>
+                          </>
+                        )}
                       </>
                     )}
+                    
                     <button onClick={() => {
                         const mediaChong = ((placar.chongP1 || 0) + (placar.chongP2 || placar.chongP1 || 0)) / (lutaAtual.poomsae_2 ? 2 : 1);
                         const mediaHong = ((placar.hongP1 || 0) + (placar.hongP2 || placar.hongP1 || 0)) / (lutaAtual.poomsae_2 ? 2 : 1);
