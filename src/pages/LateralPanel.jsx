@@ -61,7 +61,7 @@ export function LateralPanel() {
     testarBackend();
   }, []);
 
-  // 1. Carregar usuário e conectar WebSocket
+  // 1. Carregar usuário e conectar WebSocket + FULLSCREEN
   useEffect(() => {
     const usuarioSalvo = JSON.parse(localStorage.getItem('usuarioOmegaTeam') || '{}');
     setUsuario(usuarioSalvo);
@@ -70,6 +70,35 @@ export function LateralPanel() {
     console.log('Campus ID:', campId);
     console.log('Usuário:', usuarioSalvo);
     console.groupEnd();
+
+    // ✅ Entrar em FULLSCREEN + LANDSCAPE no mount
+    const enterFullscreen = async () => {
+      try {
+        // Tentar travar em landscape
+        if (screen.orientation && screen.orientation.lock) {
+          try {
+            await screen.orientation.lock('landscape');
+            console.log('✅ Orientation locked to landscape');
+          } catch (e) {
+            console.warn('⚠️ Could not lock orientation:', e);
+          }
+        }
+
+        // Tentar entrar em fullscreen
+        const element = document.documentElement;
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+          console.log('✅ Entered fullscreen');
+        } else if (element.webkitRequestFullscreen) {
+          await element.webkitRequestFullscreen();
+          console.log('✅ Entered fullscreen (webkit)');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not enter fullscreen:', e);
+      }
+    };
+
+    enterFullscreen();
 
     if (usuarioSalvo.email && campId) {
       console.log('✅ Dados OK, conectando WebSocket...');
@@ -84,6 +113,10 @@ export function LateralPanel() {
         ws.current.close();
       }
       liberarWakeLock();
+      // Sair de fullscreen ao desmontar
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
     };
   }, [campId]);
 
@@ -297,7 +330,11 @@ export function LateralPanel() {
       // Tentar reconectar em 3 segundos se não foi fechado normalmente
       if (!event.wasClean) {
         console.log('🔄 Tentando reconectar em 3 segundos...');
-        setTimeout(() => conectarWebSocket(email), 3000);
+        setTimeout(() => {
+          conectarWebSocket(email);
+          // 🔄 Após reconectar, buscar luta atual (em caso de luta em andamento)
+          setTimeout(() => buscarLutaAtual(), 500);
+        }, 3000);
       }
     };
   };

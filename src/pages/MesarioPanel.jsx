@@ -104,6 +104,27 @@ export function MesarioPanel() {
   };
 
   // ==========================================
+  // SALVAR TURNO POOMSAE NO BANCO
+  // ==========================================
+  const salvarTurnoPoomsae = async (turno) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lutas/${lutaAtual._id}/atualizar-turno-poomsae`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turno_poomsae: turno })
+      });
+      
+      if (response.ok) {
+        console.log(`✅ Turno Poomsae atualizado para: ${turno}`);
+      } else {
+        console.error('❌ Erro ao salvar turno Poomsae:', await response.text());
+      }
+    } catch (error) {
+      console.error('❌ Erro ao enviar turno Poomsae:', error);
+    }
+  };
+
+  // ==========================================
   // 2B. WEBSOCKET PARA PONTOS DO JOYSTICK
   // ==========================================
   useEffect(() => {
@@ -729,12 +750,30 @@ export function MesarioPanel() {
                     
                     <button 
                       onClick={() => {
+                        let novoStatus;
                         // Máquina de estados
-                        if (statusLuta === 'andamento') setStatusLuta('turno_chong_p1');
-                        else if (statusLuta === 'turno_chong_p1') setStatusLuta('turno_hong_p1');
-                        else if (statusLuta === 'turno_hong_p1') setStatusLuta(lutaAtual.poomsae_2 ? 'turno_chong_p2' : 'encerrada');
-                        else if (statusLuta === 'turno_chong_p2') setStatusLuta('turno_hong_p2');
-                        else if (statusLuta === 'turno_hong_p2') setStatusLuta('encerrada');
+                        if (statusLuta === 'andamento') {
+                          novoStatus = 'turno_chong_p1';
+                          salvarTurnoPoomsae('chong_p1');
+                        }
+                        else if (statusLuta === 'turno_chong_p1') {
+                          novoStatus = 'turno_hong_p1';
+                          salvarTurnoPoomsae('hong_p1');
+                        }
+                        else if (statusLuta === 'turno_hong_p1') {
+                          novoStatus = lutaAtual.poomsae_2 ? 'turno_chong_p2' : 'encerrada';
+                          salvarTurnoPoomsae(lutaAtual.poomsae_2 ? 'chong_p2' : null);
+                        }
+                        else if (statusLuta === 'turno_chong_p2') {
+                          novoStatus = 'turno_hong_p2';
+                          salvarTurnoPoomsae('hong_p2');
+                        }
+                        else if (statusLuta === 'turno_hong_p2') {
+                          novoStatus = 'encerrada';
+                          salvarTurnoPoomsae(null);
+                        }
+                        
+                        if (novoStatus) setStatusLuta(novoStatus);
                         resetarRelogio(90);
                       }}
                       className="bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl font-black text-xl uppercase tracking-widest shadow-lg shadow-green-900/50 transition-all w-full max-w-sm"

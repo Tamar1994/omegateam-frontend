@@ -106,18 +106,19 @@ export function ScoreboardTV() {
   // RENDERIZAÇÃO: POOMSAE
   // ==========================================
   if (lutaAtual.modalidade === 'Poomsae') {
-    // Determina quem está no tatame
-    const isChong = lutaAtual.status?.includes('chong');
-    const isHong = lutaAtual.status?.includes('hong');
+    // Determina quem está no tatame usando o novo campo turno_poomsae
+    const turno = lutaAtual.turno_poomsae || 'chong_p1'; // Default para primeira apresentação
+    const isChong = turno?.startsWith('chong');
+    const isHong = turno?.startsWith('hong');
+    const isPrimeiroP = turno?.includes('p1');
+    
     const atletaAtivo = isChong ? lutaAtual.atleta_vermelho : isHong ? lutaAtual.atleta_azul : lutaAtual.atleta;
     const nomeAtleta = atletaAtivo?.split(' (')[0];
     const equipeAtleta = atletaAtivo?.includes('(') ? atletaAtivo.split('(')[1].replace(')', '') : '';
     
-    const poomsaeNome = isChong && lutaAtual.status?.includes('p1') ? lutaAtual.poomsae_1 :
-                        isChong && lutaAtual.status?.includes('p2') ? lutaAtual.poomsae_2 :
-                        isHong && lutaAtual.status?.includes('p1') ? lutaAtual.poomsae_1 :
-                        isHong && lutaAtual.status?.includes('p2') ? lutaAtual.poomsae_2 :
-                        lutaAtual.poomsae_1;
+    // Determina qual Poomsae está sendo executado
+    const poomsaeNome = isPrimeiroP ? lutaAtual.poomsae_1 : lutaAtual.poomsae_2;
+    const rodadaInfo = isPrimeiroP ? '1ª Rodada' : '2ª Rodada';
 
     return (
       <div className="min-h-screen bg-black text-white flex flex-col font-sans overflow-hidden">
@@ -138,7 +139,10 @@ export function ScoreboardTV() {
           
           {/* Alerta do Poomsae a ser executado */}
           <div className="absolute top-10 bg-blue-900 bg-opacity-30 border-2 border-blue-500 px-12 py-4 rounded-full shadow-[0_0_30px_rgba(59,130,246,0.3)] animate-pulse">
-            <span className="text-3xl font-black text-blue-300 tracking-widest uppercase">{poomsaeNome || 'Aguardando Sorteio...'}</span>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-2xl font-bold text-blue-300 uppercase tracking-widest">{rodadaInfo}</span>
+              <span className="text-3xl font-black text-blue-400 tracking-widest">{poomsaeNome || 'Aguardando Sorteio...'}</span>
+            </div>
           </div>
 
           <h2 className="text-7xl font-black text-white mb-4 mt-20 text-center">{nomeAtleta}</h2>
