@@ -336,98 +336,139 @@ function ScoreboardPoomsae({ luta }) {
     <div className="min-h-screen bg-black text-white flex overflow-hidden">
       
       {/* ===== LADO ESQUERDO - CHONG (VERMELHO) ===== */}
-      <div className="flex-1 bg-red-950 border-r-8 border-yellow-400 flex flex-col justify-between p-8">
+      <div className="flex-1 bg-gradient-to-br from-red-950 to-red-900 border-r-8 border-yellow-400 flex flex-col justify-between p-8">
         
         {/* País */}
-        <div className="text-center mb-4">
-          <p className="text-red-300 text-4xl font-black tracking-widest">{pais_vermelho || 'MAR'}</p>
+        <div className="text-center">
+          <p className="text-red-300 text-5xl font-black tracking-widest mb-2">{pais_vermelho || 'MAR'}</p>
+          <p className="text-red-300 text-2xl font-black">🔴 CHONG</p>
         </div>
 
         {/* Nome */}
-        <h1 className="text-center text-6xl font-black text-white leading-none mb-8 line-clamp-2">
+        <h1 className="text-center text-5xl font-black text-white leading-tight line-clamp-2">
           {nome_vermelho}
         </h1>
 
-        {/* Rótulo Chong */}
-        <div className="text-center mb-4">
-          <p className="text-red-300 text-3xl font-black">🔴 CHONG</p>
+        {/* 3 BOXES: ACCURACY | PRESENTATION | TOTAL */}
+        <div className="grid grid-cols-3 gap-3 my-6">
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-red-600/50 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">ACCURACY</p>
+            <p className="text-red-400 text-3xl font-black">4.00</p>
+          </div>
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-red-600/50 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">PRESENTATION</p>
+            <p className="text-yellow-400 text-3xl font-black">6.00</p>
+          </div>
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-omega-red/60 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">TOTAL</p>
+            <p className="text-white text-3xl font-black">10.0</p>
+          </div>
         </div>
 
-        {/* Nota Gigante */}
-        <div className="flex-1 flex items-center justify-center mb-8">
-          <p className="text-8xl font-black text-red-400" style={{textShadow: '0 0 20px rgba(220, 38, 38, 0.8)'}}>
+        {/* Nota Gigante Destaque */}
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-9xl font-black text-red-400" style={{textShadow: '0 0 30px rgba(220, 38, 38, 1)'}}>
             {luta.nota_red?.toFixed(2) || '0.00'}
           </p>
         </div>
 
         {/* Poomsaes apresentadas */}
-        <div className="text-center bg-red-900/50 rounded-xl p-4 border-2 border-red-600 text-sm">
-          <p className="text-red-300 font-bold">Poomsae 1: {luta.poomsae_1 || '---'}</p>
-          {luta.poomsae_2 && <p className="text-red-300 font-bold">Poomsae 2: {luta.poomsae_2}</p>}
+        <div className="text-center bg-red-900/60 rounded-xl p-4 border-3 border-red-600">
+          <p className="text-red-200 text-xs font-black mb-2">POOMSAES</p>
+          <p className="text-red-300 font-black text-lg">{luta.poomsae_1 || '---'}</p>
+          {luta.poomsae_2 && <p className="text-red-300 font-bold text-sm">+ {luta.poomsae_2}</p>}
         </div>
       </div>
 
-      {/* ===== CENTRO ===== */}
-      <div className="w-96 bg-black border-x-8 border-yellow-400 flex flex-col items-center justify-center gap-8 p-8">
+      {/* ===== CENTRO - INFO CENTRAL ===== */}
+      <div className="w-full max-w-xs bg-gradient-to-b from-black via-gray-900 to-black border-x-8 border-yellow-400 flex flex-col items-center justify-between gap-6 p-8">
+        
+        {/* GRANDE DESTAQUE - Qual Poomsae? */}
+        {luta.poomsae_1 && (
+          <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-600 rounded-3xl p-8 w-full text-center shadow-2xl border-4 border-yellow-300">
+            <p className="text-black text-xs font-black mb-3 tracking-widest">🎯 POOMSAE SENDO EXECUTADO</p>
+            <p className="text-4xl font-black text-white mb-2 drop-shadow-lg">{luta.poomsae_1}</p>
+            {luta.poomsae_2 && (
+              <p className="text-lg text-black font-bold drop-shadow">OU</p>
+            )}
+            {luta.poomsae_2 && (
+              <p className="text-3xl font-black text-white mt-1 drop-shadow-lg">{luta.poomsae_2}</p>
+            )}
+          </div>
+        )}
         
         {/* Status */}
         <div className="text-center">
-          <p className="text-yellow-400 text-2xl font-black mb-4">POOMSAE</p>
-          <p className="text-gray-400 text-2xl font-bold uppercase tracking-widest">
+          <p className="text-yellow-400 text-3xl font-black mb-3">POOMSAE</p>
+          <p className="text-gray-300 text-2xl font-black uppercase tracking-widest">
             {luta.status || 'Aguardando'}
           </p>
         </div>
 
         {/* ⏱️ TIME LIMIT - Mostrar apenas durante apresentação */}
         {emApresentacao && (
-          <div className="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-2xl p-6 border-4 border-yellow-300 w-full text-center">
-            <p className="text-black text-sm font-black mb-1">⏱️ TEMPO RESTANTE</p>
-            <p className={`text-6xl font-black tabular-nums ${
-              segundosRestantes <= 10 ? 'text-red-600 animate-pulse' : 'text-black'
+          <div className="bg-gradient-to-r from-red-700 to-red-900 rounded-3xl p-8 w-full text-center shadow-2xl border-4 border-red-400">
+            <p className="text-yellow-300 text-xs font-black mb-2 tracking-widest">⏱️ TEMPO LIMITE</p>
+            <p className={`text-8xl font-black tabular-nums tracking-widest drop-shadow-lg ${
+              segundosRestantes <= 10 ? 'text-yellow-300 animate-pulse' : 'text-white'
             }`}>
               {formatarTempo(segundosRestantes)}
             </p>
+            <p className="text-yellow-200 text-sm mt-2 font-black">90 segundos máximo</p>
           </div>
         )}
 
         {/* Categoria */}
-        <div className="text-center text-gray-500">
-          <p className="text-sm font-bold">{luta.nome_categoria || ''}</p>
+        <div className="text-center mt-auto">
+          <p className="text-gray-400 text-sm font-bold">{luta.nome_categoria || ''}</p>
         </div>
 
         {/* Logo Omega */}
-        <img src={omegaLogo} alt="Omega" className="h-32 mt-auto opacity-50" />
+        <img src={omegaLogo} alt="Omega" className="h-20 opacity-40" />
       </div>
 
       {/* ===== LADO DIREITO - HONG (AZUL) ===== */}
-      <div className="flex-1 bg-blue-950 border-l-8 border-yellow-400 flex flex-col justify-between p-8">
+      <div className="flex-1 bg-gradient-to-br from-blue-950 to-blue-900 border-l-8 border-yellow-400 flex flex-col justify-between p-8">
         
         {/* País */}
-        <div className="text-center mb-4">
-          <p className="text-blue-300 text-4xl font-black tracking-widest">{pais_azul || 'KOR'}</p>
+        <div className="text-center">
+          <p className="text-blue-300 text-5xl font-black tracking-widest mb-2">{pais_azul || 'KOR'}</p>
+          <p className="text-blue-300 text-2xl font-black">🔵 HONG</p>
         </div>
 
         {/* Nome */}
-        <h1 className="text-center text-6xl font-black text-white leading-none mb-8 line-clamp-2">
+        <h1 className="text-center text-5xl font-black text-white leading-tight line-clamp-2">
           {nome_azul}
         </h1>
 
-        {/* Rótulo Hong */}
-        <div className="text-center mb-4">
-          <p className="text-blue-300 text-3xl font-black">🔵 HONG</p>
+        {/* 3 BOXES: ACCURACY | PRESENTATION | TOTAL */}
+        <div className="grid grid-cols-3 gap-3 my-6">
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-blue-600/50 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">ACCURACY</p>
+            <p className="text-blue-400 text-3xl font-black">4.00</p>
+          </div>
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-blue-600/50 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">PRESENTATION</p>
+            <p className="text-yellow-400 text-3xl font-black">6.00</p>
+          </div>
+          <div className="bg-black/60 rounded-lg p-3 border-2 border-omega-red/60 text-center">
+            <p className="text-gray-400 text-xs font-black mb-1">TOTAL</p>
+            <p className="text-white text-3xl font-black">10.0</p>
+          </div>
         </div>
 
-        {/* Nota Gigante */}
-        <div className="flex-1 flex items-center justify-center mb-8">
-          <p className="text-8xl font-black text-blue-400" style={{textShadow: '0 0 20px rgba(37, 99, 235, 0.8)'}}>
+        {/* Nota Gigante Destaque */}
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-9xl font-black text-blue-400" style={{textShadow: '0 0 30px rgba(37, 99, 235, 1)'}}>
             {luta.nota_azul?.toFixed(2) || '0.00'}
           </p>
         </div>
 
         {/* Poomsaes apresentadas */}
-        <div className="text-center bg-blue-900/50 rounded-xl p-4 border-2 border-blue-600 text-sm">
-          <p className="text-blue-300 font-bold">Poomsae 1: {luta.poomsae_1 || '---'}</p>
-          {luta.poomsae_2 && <p className="text-blue-300 font-bold">Poomsae 2: {luta.poomsae_2}</p>}
+        <div className="text-center bg-blue-900/60 rounded-xl p-4 border-3 border-blue-600">
+          <p className="text-blue-200 text-xs font-black mb-2">POOMSAES</p>
+          <p className="text-blue-300 font-black text-lg">{luta.poomsae_1 || '---'}</p>
+          {luta.poomsae_2 && <p className="text-blue-300 font-bold text-sm">+ {luta.poomsae_2}</p>}
         </div>
       </div>
     </div>
