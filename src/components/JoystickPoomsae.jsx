@@ -456,4 +456,3 @@ export function JoystickPoomsae({ luta, usuario, ws, t }) {
 
   return null;
 }
-\
