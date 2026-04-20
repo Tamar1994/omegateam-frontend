@@ -286,6 +286,34 @@ function ScoreboardKyorugui({ luta }) {
 // COMPONENTE: POOMSAE PROFISSIONAL PARA TV
 // ==========================================
 function ScoreboardPoomsae({ luta }) {
+  const [segundosRestantes, setSegundosRestantes] = React.useState(null);
+  const [emApresentacao, setEmApresentacao] = React.useState(false);
+
+  // Inicializar timer quando status muda para "apresentando"
+  React.useEffect(() => {
+    if (luta?.status?.toLowerCase().includes('apresent')) {
+      setEmApresentacao(true);
+      setSegundosRestantes(90); // Time limit para Poomsae (90 segundos)
+    } else {
+      setEmApresentacao(false);
+      setSegundosRestantes(null);
+    }
+  }, [luta?.status, luta?.id]);
+
+  // Countdown timer
+  React.useEffect(() => {
+    if (!emApresentacao || !luta?.id) return;
+
+    const intervalo = setInterval(() => {
+      setSegundosRestantes(prev => {
+        if (prev === null || prev <= 0) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalo);
+  }, [emApresentacao, luta?.id]);
+
   const extrairPais = (nome) => {
     const match = nome?.match(/\(([^)]+)\)$/);
     return match ? match[1] : '';
@@ -295,6 +323,14 @@ function ScoreboardPoomsae({ luta }) {
   const pais_azul = extrairPais(luta.atleta_azul);
   const nome_vermelho = luta.atleta_vermelho?.split(' (')[0] || 'ATLETA';
   const nome_azul = luta.atleta_azul?.split(' (')[0] || 'ATLETA';
+
+  // Formatador de tempo MM:SS
+  const formatarTempo = (segundos) => {
+    if (segundos === null) return '--:--';
+    const mins = Math.floor(segundos / 60);
+    const segs = segundos % 60;
+    return `${mins.toString().padStart(2, '0')}:${segs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex overflow-hidden">
@@ -341,6 +377,18 @@ function ScoreboardPoomsae({ luta }) {
             {luta.status || 'Aguardando'}
           </p>
         </div>
+
+        {/* ⏱️ TIME LIMIT - Mostrar apenas durante apresentação */}
+        {emApresentacao && (
+          <div className="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-2xl p-6 border-4 border-yellow-300 w-full text-center">
+            <p className="text-black text-sm font-black mb-1">⏱️ TEMPO RESTANTE</p>
+            <p className={`text-6xl font-black tabular-nums ${
+              segundosRestantes <= 10 ? 'text-red-600 animate-pulse' : 'text-black'
+            }`}>
+              {formatarTempo(segundosRestantes)}
+            </p>
+          </div>
+        )}
 
         {/* Categoria */}
         <div className="text-center text-gray-500">
