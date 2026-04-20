@@ -95,9 +95,10 @@ export function HomeBanner({ usuario, isLoggedIn, onLogout }) {
                     <>
                       <button 
                         onClick={() => navigate('/painel-arbitro')}
-                        className="flex items-center gap-3 px-4 py-2 text-blue-600 font-bold hover:bg-blue-50 text-left w-full transition-colors"
+                        className="flex items-center gap-3 px-4 py-2 text-blue-600 font-bold hover:bg-blue-50 text-left w-full transition-colors whitespace-nowrap"
                       >
-                        <MonitorPlay size={18} /> {t('sessao_arbitro')}
+                        <MonitorPlay size={18} className="flex-shrink-0" /> 
+                        <span>{t('sessao_arbitro')}</span>
                       </button>
                       <div className="h-px bg-gray-100 my-1"></div>
                     </>
