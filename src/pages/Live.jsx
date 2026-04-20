@@ -108,7 +108,11 @@ export function Live() {
                   ) : (
                     <div className="flex-1 bg-gray-900 p-6 flex flex-col items-center justify-center text-center">
                       <p className="text-gray-400 text-sm mb-1 uppercase">Apresentação Poomsae</p>
-                      <h3 className="text-2xl font-black text-white">{luta.atleta.split(' (')[0]}</h3>
+                      <div className="flex flex-col gap-2 items-center w-full">
+                        <div className="text-red-400 text-sm font-bold">🔴 {luta.atleta_vermelho.split(' (')[0]}</div>
+                        <div className="text-xs text-gray-500">vs</div>
+                        <div className="text-blue-400 text-sm font-bold">🔵 {luta.atleta_azul.split(' (')[0]}</div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -149,7 +153,7 @@ export function Live() {
                         </div>
                       ) : (
                         <div className="text-sm font-bold text-gray-200">
-                          {luta.ordem_apresentacao}º - {luta.atleta.split(' (')[0]}
+                          🎲 {luta.atleta_vermelho.split(' (')[0]} <span className="text-xs text-gray-500 mx-1">vs</span> {luta.atleta_azul.split(' (')[0]}
                         </div>
                       )}
                     </div>

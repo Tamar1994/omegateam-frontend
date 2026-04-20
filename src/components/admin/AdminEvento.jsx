@@ -219,13 +219,13 @@ export function AdminEvento({ evento, onVoltar }) {
           30
         );
 
-        const tableColumn = ['Nº Chamada', 'Local/Hora', 'Categoria', 'Ordem', 'Atleta'];
+        const tableColumn = ['Nº Chamada', 'Local/Hora', 'Categoria', 'Chong (Vermelho)', 'Hong (Azul)'];
         const tableRows = lutas.map(luta => [
           luta.ordem_luta,
           `Quadra ${luta.quadra || '-'} | ${luta.horario_previsto || '-'}`,
           getNomeCategoria(luta.categoria_id),
-          `${luta.ordem_apresentacao}º`,
-          luta.atleta
+          luta.atleta_vermelho,
+          luta.atleta_azul
         ]);
 
         autoTable(doc, {
