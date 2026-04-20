@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Trophy, MonitorPlay } from 'lucide-react';
 import omegaLogo from '../assets/omega-logo.png';
@@ -9,6 +9,7 @@ export function Live() {
   const [campeonato, setCampeonato] = useState(null);
   const [lutas, setLutas] = useState([]);
   const [horaAtual, setHoraAtual] = useState(new Date());
+  const wsLive = useRef(null);
 
   // Relógio no topo da tela
   useEffect(() => {
@@ -33,12 +34,81 @@ export function Live() {
     }
   };
 
-  // Efeito de Polling: Atualiza a tela sozinha a cada 10 segundos
+  // ==========================================
+  // CONECTAR AO WEBSOCKET LIVE
+  // ==========================================
   useEffect(() => {
+    if (!id) return;
+
+    const connectLiveWebSocket = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/live/${id}`;
+      
+      console.log('📺 [Live] Conectando ao WebSocket:', wsUrl);
+      
+      wsLive.current = new WebSocket(wsUrl);
+      
+      wsLive.current.onopen = () => {
+        console.log('✅ [Live] WebSocket conectado');
+      };
+      
+      wsLive.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('📨 [Live] Atualização recebida:', data);
+          
+          if (data.tipo === 'luta_atualizada') {
+            console.log(`📺 [Live] Luta ${data.luta_id} atualizada: ${data.status}`);
+            
+            // Atualizar a luta na lista
+            setLutas(prevLutas => 
+              prevLutas.map(luta => 
+                luta._id === data.luta_id 
+                  ? {
+                      ...luta,
+                      status: data.status,
+                      pontos_vermelho: data.placar.red_pontos,
+                      pontos_azul: data.placar.blue_pontos,
+                      faltas_vermelho: data.placar.red_faltas,
+                      faltas_azul: data.placar.blue_faltas,
+                      round: data.placar.round,
+                      turno_poomsae: data.placar.turno_poomsae
+                    }
+                  : luta
+              )
+            );
+          }
+        } catch (e) {
+          console.error('❌ [Live] Erro ao processar mensagem:', e);
+        }
+      };
+      
+      wsLive.current.onerror = (error) => {
+        console.error('❌ [Live] Erro WebSocket:', error);
+      };
+      
+      wsLive.current.onclose = () => {
+        console.log('❌ [Live] WebSocket desconectado, tentando reconectar em 5s...');
+        setTimeout(connectLiveWebSocket, 5000);
+      };
+    };
+    
+    connectLiveWebSocket();
+    
+    // Carregamento inicial
     carregarDados();
-    const intervalo = setInterval(carregarDados, 10000); 
-    return () => clearInterval(intervalo);
-  }, [id]);
+    
+    // Poll a cada 30 segundos como fallback (menos frequente agora)
+    const intervalo = setInterval(carregarDados, 30000); 
+    
+    return () => {
+      clearInterval(intervalo);
+      if (wsLive.current) {
+        wsLive.current.close();
+      }
+    };
+  }, [id, campeonato]);
 
   if (!campeonato) {
     return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white font-bold text-2xl">Carregando Painel Live...</div>;
