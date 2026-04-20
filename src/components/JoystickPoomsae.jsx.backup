@@ -1,0 +1,619 @@
+import React, { useState, useEffect } from 'react';
+import { Minus, Plus, CheckCircle, Clock, Zap, Volume2 } from 'lucide-react';
+
+/**
+ * JoystickPoomsae - Sistema de Scoring Poomsae REESTRUTURADO
+ * 
+ * NOVO SISTEMA:
+ * FASE 1: NOTA DE PRECISÃO (ACCURACY)
+ *   - Começa com 4.00
+ *   - Deduz -0.1 (simples) ou -0.3 (grave)
+ *   - Mínimo 0.00
+ * 
+ * FASE 2: NOTA DE APRESENTAÇÃO (após enviar accuracy)
+ *   - 3 sliders (0-2.00 cada):
+ *     - Velocidade e Força
+ *     - Ritmo/Tempo
+ *     - Expressão de Energia
+ * 
+ * NOTA FINAL: Accuracy + Apresentação (máx 10.00)
+ */
+export function JoystickPoomsae({ luta, usuario, ws, t }) {
+  useEffect(() => {
+    console.log('🎮 JoystickPoomsae RESTRUCTURADO MONTADO:', { luta, usuario });
+  }, []);
+
+  if (!luta || !luta.id) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="text-gray-400 text-lg">Aguardando dados da luta...</p>
+      </div>
+    );
+  }
+
+  if (!ws || !ws.current) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="text-red-400 text-lg">Erro: WebSocket não conectado.</p>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // ESTADOS
+  // ==========================================
+
+  // Qual atleta está sendo avaliado (começa com 'vermelho')
+  const [atletaAtual, setAtletaAtual] = useState(luta.atleta_em_apresentacao || 'vermelho');
+  
+  // FASE 1: Accuracy
+  const [fase, setFase] = useState('accuracy'); // 'accuracy' ou 'apresentacao'
+  const [notaAccuracy, setNotaAccuracy] = useState(4.0);
+  const [deducoesAccuracy, setDeducoesAccuracy] = useState(0);
+  
+  // FASE 2: Apresentação (3 sliders)
+  const [notaVelocidade, setNotaVelocidade] = useState(1.0); // 0-2.00
+  const [notaRitmo, setNotaRitmo] = useState(1.0);          // 0-2.00
+  const [notaExpressao, setNotaExpressao] = useState(1.0);  // 0-2.00
+  
+  // Estados de submissão
+  const [enviando, setEnviando] = useState(false);
+  const [computando, setComputando] = useState(false);
+  const [notaFinal, setNotaFinal] = useState(null);
+  const [resultadoFinal, setResultadoFinal] = useState(null);
+
+  // Listener para mensagens WebSocket
+  useEffect(() => {
+    const handleMessage = (event) => {
+      try {
+        const dados = JSON.parse(event.data);
+        
+        if (dados.tipo === 'poomsae_resultado_final') {
+          console.log('🏆 RESULTADO FINAL:', dados);
+          setComputando(false);
+          setResultadoFinal(dados.resultado_final);
+        }
+      } catch (e) {
+        console.error('Erro ao processar mensagem:', e);
+      }
+    };
+
+    if (ws?.current) {
+      ws.current.addEventListener('message', handleMessage);
+      return () => ws.current.removeEventListener('message', handleMessage);
+    }
+  }, [ws]);
+
+  // ==========================================
+  // FUNÇÕES - FASE 1: ACCURACY
+  // ==========================================
+
+  const adicionarDeducao = (valor) => {
+    const novaDeducao = deducoesAccuracy + valor;
+    const limitado = Math.min(4.0, novaDeducao); // Não pode ser negativa
+    setDeducoesAccuracy(limitado);
+    
+    const novaNota = Math.max(0, 4.0 - limitado);
+    setNotaAccuracy(novaNota);
+  };
+
+  const removerDeducao = () => {
+    if (deducoesAccuracy > 0) {
+      const novaDeducao = Math.max(0, deducoesAccuracy - 0.1);
+      setDeducoesAccuracy(novaDeducao);
+      
+      const novaNota = Math.max(0, 4.0 - novaDeducao);
+      setNotaAccuracy(novaNota);
+    }
+  };
+
+  const resetarAccuracy = () => {
+    setNotaAccuracy(4.0);
+    setDeducoesAccuracy(0);
+  };
+
+  const enviarAccuracy = async () => {
+    try {
+      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+        alert('WebSocket desconectado!');
+        return;
+      }
+
+      setEnviando(true);
+
+      const dados = {
+        tipo: 'poomsae_accuracy',
+        luta_id: luta.id,
+        juiz_email: usuario?.email,
+        atletaAtual,
+        nota_accuracy: parseFloat(notaAccuracy.toFixed(2)),
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('📤 Enviando nota de Accuracy:', dados);
+      ws.current.send(JSON.stringify(dados));
+
+      // Passar para fase 2
+      setTimeout(() => {
+        setFase('apresentacao');
+        setEnviando(false);
+      }, 500);
+    } catch (error) {
+      console.error('❌ Erro:', error);
+      setEnviando(false);
+    }
+  };
+
+  // ==========================================
+  // FUNÇÕES - FASE 2: APRESENTAÇÃO
+  // ==========================================
+
+  const enviarApresentacao = async () => {
+    try {
+      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+        alert('WebSocket desconectado!');
+        return;
+      }
+
+      setEnviando(true);
+      setComputando(true);
+
+      const notaApresentacao = parseFloat(
+        (notaVelocidade + notaRitmo + notaExpressao).toFixed(2)
+      );
+      const notaTotalPoomsae = parseFloat(
+        (notaAccuracy + notaApresentacao).toFixed(2)
+      );
+
+      const dados = {
+        tipo: 'poomsae_apresentacao',
+        luta_id: luta.id,
+        juiz_email: usuario?.email,
+        atletaAtual,
+        nota_accuracy: parseFloat(notaAccuracy.toFixed(2)),
+        nota_velocidade: parseFloat(notaVelocidade.toFixed(2)),
+        nota_ritmo: parseFloat(notaRitmo.toFixed(2)),
+        nota_expressao: parseFloat(notaExpressao.toFixed(2)),
+        nota_apresentacao: notaApresentacao,
+        nota_total: notaTotalPoomsae,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('📤 Enviando nota de Apresentação:', dados);
+      ws.current.send(JSON.stringify(dados));
+
+      setNotaFinal(notaTotalPoomsae);
+    } catch (error) {
+      console.error('❌ Erro:', error);
+      setEnviando(false);
+      setComputando(false);
+    }
+  };
+
+  // ==========================================
+  // RENDER - RESULTADO FINAL
+  // ==========================================
+
+  if (resultadoFinal) {
+    const vermelho_nota = resultadoFinal.notas.vermelho;
+    const azul_nota = resultadoFinal.notas.azul;
+    const vencedor = vermelho_nota > azul_nota ? 'vermelho' : azul_nota > vermelho_nota ? 'azul' : 'empate';
+
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 md:p-8">
+        <div className="w-full max-w-2xl space-y-6">
+          <div className="text-center">
+            <h1 className="text-4xl font-black text-white mb-2">🏆 RESULTADO FINAL</h1>
+            <p className="text-gray-400">Poomsae - Todas as notas computadas</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Vermelho */}
+            <div
+              className={`${
+                vencedor === 'vermelho' ? 'ring-4 ring-yellow-400' : ''
+              } bg-red-900/30 border-4 border-red-600 rounded-2xl p-6 text-center`}
+            >
+              <h2 className="text-2xl font-black text-red-400 mb-2">🔴 CHONG (Vermelho)</h2>
+              <p className="text-gray-400 mb-4">{luta.atleta_vermelho}</p>
+              <div className="bg-black/40 rounded-xl p-4 border border-red-600">
+                <p className="text-gray-400 text-xs font-bold mb-1">NOTA FINAL</p>
+                <p className="text-5xl font-black text-red-400">{vermelho_nota.toFixed(2)}</p>
+              </div>
+              {vencedor === 'vermelho' && (
+                <p className="mt-4 text-yellow-400 font-black text-lg">👑 VENCEDOR!</p>
+              )}
+            </div>
+
+            {/* Azul */}
+            <div
+              className={`${
+                vencedor === 'azul' ? 'ring-4 ring-yellow-400' : ''
+              } bg-blue-900/30 border-4 border-blue-600 rounded-2xl p-6 text-center`}
+            >
+              <h2 className="text-2xl font-black text-blue-400 mb-2">🔵 HONG (Azul)</h2>
+              <p className="text-gray-400 mb-4">{luta.atleta_azul}</p>
+              <div className="bg-black/40 rounded-xl p-4 border border-blue-600">
+                <p className="text-gray-400 text-xs font-bold mb-1">NOTA FINAL</p>
+                <p className="text-5xl font-black text-blue-400">{azul_nota.toFixed(2)}</p>
+              </div>
+              {vencedor === 'azul' && (
+                <p className="mt-4 text-yellow-400 font-black text-lg">👑 VENCEDOR!</p>
+              )}
+            </div>
+          </div>
+
+          {vencedor === 'empate' && (
+            <div className="bg-yellow-900/30 border-4 border-yellow-600 rounded-2xl p-6 text-center">
+              <p className="text-yellow-400 font-black text-xl">🤝 EMPATE!</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER - COMPUTANDO
+  // ==========================================
+
+  if (computando) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <div className="relative w-24 h-24 mx-auto">
+            <div className="absolute inset-0 border-4 border-transparent border-t-omega-red rounded-full animate-spin"></div>
+            <Zap className="absolute inset-0 m-auto text-omega-red animate-pulse" size={48} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-white mb-2">⏳ Computando Notas...</h2>
+            <p className="text-gray-400">Aguardando outros árbitros...</p>
+          </div>
+          <div className="bg-green-900/30 border-2 border-green-600 rounded-lg p-4">
+            <p className="text-green-400 font-semibold">ℹ️ Suas notas foram registradas</p>
+            <p className="text-gray-400 text-sm mt-2">Accuracy: {notaAccuracy.toFixed(2)}</p>
+            <p className="text-gray-400 text-sm">Apresentação: {(notaVelocidade + notaRitmo + notaExpressao).toFixed(2)}</p>
+            <p className="text-gray-400 text-sm font-bold">Total: {notaFinal?.toFixed(2) || 'calculando'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER - FASE 1: ACCURACY
+  // ==========================================
+
+  if (fase === 'accuracy') {
+    const isVermelho = atletaAtual === 'vermelho';
+    const atleta = isVermelho ? luta.atleta_vermelho : luta.atleta_azul;
+    const corBg = isVermelho ? 'bg-red-900/30 border-red-600' : 'bg-blue-900/30 border-blue-600';
+    const corText = isVermelho ? 'text-red-400' : 'text-blue-400';
+    const corBotao = isVermelho ? 'bg-red-600 hover:bg-red-500 border-red-400' : 'bg-blue-600 hover:bg-blue-500 border-blue-400';
+
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 md:p-8">
+        <div className="w-full max-w-2xl space-y-4">
+          <div className="text-center">
+            <h1 className="text-3xl font-black text-white mb-1">NOTA DE PRECISÃO</h1>
+            <p className="text-gray-400 text-sm">Fase 1 de 2</p>
+          </div>
+
+          <div className={`${corBg} border-4 rounded-2xl p-6 space-y-6`}>
+            {/* Título e Atleta */}
+            <div className="text-center">
+              <h2 className={`text-2xl font-black ${corText} mb-1`}>
+                {isVermelho ? '🔴 Chong (Vermelho)' : '🔵 Hong (Azul)'}
+              </h2>
+              <p className={`text-sm ${corText} opacity-80`}>{atleta}</p>
+            </div>
+
+            {/* Nota Grande */}
+            <div className="bg-black/40 rounded-xl p-6 text-center border border-gray-700">
+              <p className="text-gray-400 text-xs font-bold mb-2">NOTA DE PRECISÃO</p>
+              <p className={`text-7xl font-black tabular-nums ${
+                notaAccuracy >= 3.5 ? 'text-green-400' : notaAccuracy >= 2.0 ? 'text-yellow-400' : 'text-orange-400'
+              }`}>
+                {notaAccuracy.toFixed(2)}
+              </p>
+              <p className="text-gray-500 text-xs mt-2">Base: 4.00 | Deduções: -{deducoesAccuracy.toFixed(2)}</p>
+            </div>
+
+            {/* Informação */}
+            <div className="bg-blue-900/30 border-2 border-blue-600 rounded-lg p-3 text-center">
+              <p className="text-blue-400 font-bold text-sm">ℹ️ Deduzir conforme os erros:</p>
+              <p className="text-gray-400 text-xs mt-1">Erro simples: -0.1 | Erro grave: -0.3</p>
+            </div>
+
+            {/* Botões de Deduções */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => adicionarDeducao(0.1)}
+                className={`py-3 rounded-lg font-bold text-white border-2 ${corBotao} transition-all active:scale-95`}
+              >
+                <Minus size={16} className="inline mr-1" />
+                -0.1 Simples
+              </button>
+              <button
+                onClick={() => adicionarDeducao(0.3)}
+                className={`py-3 rounded-lg font-bold text-white border-2 ${corBotao} transition-all active:scale-95`}
+              >
+                <Minus size={16} className="inline mr-1" />
+                -0.3 Grave
+              </button>
+            </div>
+
+            {/* Botão Remover */}
+            {deducoesAccuracy > 0 && (
+              <button
+                onClick={removerDeducao}
+                className="w-full py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold text-sm transition-all"
+              >
+                ↻ Remover (-0.1)
+              </button>
+            )}
+
+            {/* Botões de Ação */}
+            <div className="flex gap-3">
+              <button
+                onClick={resetarAccuracy}
+                className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-all"
+              >
+                🔄 Resetar
+              </button>
+              <button
+                onClick={enviarAccuracy}
+                disabled={enviando}
+                className={`flex-1 py-4 ${corBotao} rounded-xl font-black text-lg tracking-widest uppercase transition-all border-2 text-white disabled:opacity-50`}
+              >
+                {enviando ? '⏳ Enviando...' : '✓ Próxima Fase'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER - FASE 2: APRESENTAÇÃO (SLIDERS)
+  // ==========================================
+
+  if (fase === 'apresentacao') {
+    const isVermelho = atletaAtual === 'vermelho';
+    const atleta = isVermelho ? luta.atleta_vermelho : luta.atleta_azul;
+    const corBg = isVermelho ? 'bg-red-900/30 border-red-600' : 'bg-blue-900/30 border-blue-600';
+    const corText = isVermelho ? 'text-red-400' : 'text-blue-400';
+    const corBotao = isVermelho ? 'bg-red-600 hover:bg-red-500 border-red-400' : 'bg-blue-600 hover:bg-blue-500 border-blue-400';
+
+    const notaApresentacao = notaVelocidade + notaRitmo + notaExpressao;
+    const notaTotal = notaAccuracy + notaApresentacao;
+
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 md:p-8">
+        <div className="w-full max-w-2xl space-y-4">
+          <div className="text-center">
+            <h1 className="text-3xl font-black text-white mb-1">NOTA DE APRESENTAÇÃO</h1>
+            <p className="text-gray-400 text-sm">Fase 2 de 2 - Use os sliders (0-2.00 cada)</p>
+          </div>
+
+          <div className={`${corBg} border-4 rounded-2xl p-6 space-y-6`}>
+            {/* Título e Atleta */}
+            <div className="text-center">
+              <h2 className={`text-2xl font-black ${corText} mb-1`}>
+                {isVermelho ? '🔴 Chong (Vermelho)' : '🔵 Hong (Azul)'}
+              </h2>
+              <p className={`text-sm ${corText} opacity-80`}>{atleta}</p>
+            </div>
+
+            {/* Resumo de Notas */}
+            <div className="grid grid-cols-3 gap-2 bg-black/40 rounded-lg p-3 border border-gray-700">
+              <div className="text-center">
+                <p className="text-gray-400 text-xs font-bold">ACCURACY</p>
+                <p className="text-lg font-black text-red-400">{notaAccuracy.toFixed(2)}</p>
+              </div>
+              <div className="text-center border-x border-gray-700">
+                <p className="text-gray-400 text-xs font-bold">APRESENTAÇÃO</p>
+                <p className="text-lg font-black text-yellow-400">{notaApresentacao.toFixed(2)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-gray-400 text-xs font-bold">TOTAL</p>
+                <p className="text-lg font-black text-green-400">{notaTotal.toFixed(2)}</p>
+              </div>
+            </div>
+
+            {/* Slider 1: Velocidade e Força */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-bold text-gray-200">⚡ Velocidade e Força</label>
+                <span className="text-lg font-black text-yellow-400">{notaVelocidade.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={notaVelocidade}
+                onChange={(e) => setNotaVelocidade(parseFloat(e.target.value))}
+                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>0.00</span>
+                <span>2.00</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Ritmo/Tempo */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-bold text-gray-200">🎵 Ritmo / Tempo</label>
+                <span className="text-lg font-black text-blue-400">{notaRitmo.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={notaRitmo}
+                onChange={(e) => setNotaRitmo(parseFloat(e.target.value))}
+                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>0.00</span>
+                <span>2.00</span>
+              </div>
+            </div>
+
+            {/* Slider 3: Expressão de Energia */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-bold text-gray-200">✨ Expressão de Energia</label>
+                <span className="text-lg font-black text-purple-400">{notaExpressao.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={notaExpressao}
+                onChange={(e) => setNotaExpressao(parseFloat(e.target.value))}
+                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>0.00</span>
+                <span>2.00</span>
+              </div>
+            </div>
+
+            {/* Botão Enviar */}
+            <button
+              onClick={enviarApresentacao}
+              disabled={enviando}
+              className={`w-full py-4 ${corBotao} rounded-xl font-black text-lg tracking-widest uppercase transition-all transform hover:scale-105 active:scale-95 shadow-2xl border-2 text-white disabled:opacity-50`}
+            >
+              {enviando ? '⏳ Enviando...' : '✓ Submeter Notas'}
+            </button>
+          </div>
+
+          {/* Info */}
+          <div className="bg-black/40 rounded-xl p-4 border border-gray-700 text-center text-xs text-gray-400">
+            💡 Nota Final = Accuracy ({notaAccuracy.toFixed(2)}) + Apresentação ({notaApresentacao.toFixed(2)}) = {notaTotal.toFixed(2)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  return (
+    <div className="flex-1 flex items-center justify-center p-6">
+      <p className="text-gray-400 text-lg">Estado desconhecido...</p>
+    </div>
+  );
+}
+
+  // RENDER NORMAL: Formulário de avaliação
+  const isVermelho = atletaAtual === 'vermelho';
+  const atleta = isVermelho ? luta.atleta_vermelho : luta.atleta_azul;
+  const corBg = isVermelho ? 'bg-red-900/30 border-red-600' : 'bg-blue-900/30 border-blue-600';
+  const corText = isVermelho ? 'text-red-400' : 'text-blue-400';
+  const corBotao = isVermelho ? 'bg-red-600 hover:bg-red-500 border-red-400' : 'bg-blue-600 hover:bg-blue-500 border-blue-400';
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-6 md:p-8">
+      <div className="w-full max-w-2xl space-y-4">
+        {/* Header */}
+        <div className="text-center">
+          <h1 className="text-3xl font-black text-white mb-1">SISTEMA DE SCORING POOMSAE</h1>
+          <p className="text-gray-400 text-sm">Avaliando um atleta por vez</p>
+        </div>
+
+        {/* Painel de Avaliação */}
+        <div className={`${corBg} border-4 rounded-2xl p-6 space-y-4`}>
+          {/* Título e Atleta */}
+          <div className="text-center">
+            <h2 className={`text-2xl font-black ${corText} mb-1`}>
+              {isVermelho ? '🔴 Chong (Vermelho)' : '🔵 Hong (Azul)'}
+            </h2>
+            <p className={`text-sm ${corText} opacity-80`}>{atleta}</p>
+          </div>
+
+          {/* Nota Final Grande */}
+          <div className="bg-black/40 rounded-xl p-4 text-center border border-gray-700">
+            <p className="text-gray-400 text-xs font-bold mb-1">NOTA FINAL</p>
+            <p className={`text-5xl font-black tabular-nums ${
+              notaAtual >= 8 ? 'text-green-400' : notaAtual >= 7 ? 'text-yellow-400' : 'text-orange-400'
+            }`}>
+              {notaAtual.toFixed(2)}
+            </p>
+          </div>
+
+          {/* Critérios de Deduções */}
+          <div className="space-y-3">
+            {criterios.map(criterio => (
+              <div key={criterio.key} className="bg-black/40 rounded-lg p-3 border border-gray-700">
+                <div className="flex justify-between items-center mb-2">
+                  <div>
+                    <p className="font-bold text-sm text-gray-200">{criterio.label}</p>
+                    <p className="text-xs text-gray-400">{criterio.descricao}</p>
+                  </div>
+                  <p className="text-lg font-black text-gray-300">
+                    -{(deducoes[criterio.key] || 0).toFixed(2)}
+                  </p>
+                </div>
+
+                {/* Botões de Deduções */}
+                <div className="flex gap-2">
+                  {deducoes_botoes.map((ded, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => adicionarDeducao(criterio.key, ded.valor)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border-2 ${corBotao} text-white active:scale-95`}
+                    >
+                      <Plus size={12} className="inline mr-1" />
+                      {ded.label}
+                    </button>
+                  ))}
+
+                  {/* Botão de Remover */}
+                  {(deducoes[criterio.key] || 0) > 0 && (
+                    <button
+                      onClick={() => removerDeducao(criterio.key, 0.1)}
+                      className="py-2 px-3 rounded-lg text-xs font-bold bg-gray-700 hover:bg-gray-600 text-white border-2 border-gray-600 transition-all active:scale-95"
+                    >
+                      <Minus size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex gap-3">
+            <button
+              onClick={resetarAvaliacao}
+              className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold transition-all border-2 border-gray-600"
+            >
+              🔄 Resetar
+            </button>
+            <button
+              onClick={enviarNota}
+              disabled={enviando}
+              className={`flex-1 py-4 ${corBotao} rounded-xl font-black text-lg tracking-widest uppercase transition-all transform hover:scale-105 active:scale-95 shadow-2xl border-2 text-white disabled:opacity-50`}
+            >
+              {enviando ? '⏳ Enviando...' : '✓ Enviar Nota'}
+            </button>
+          </div>
+        </div>
+
+        {/* Footer com Info */}
+        <div className="bg-black/40 rounded-xl p-4 border border-gray-700 text-center">
+          <p className="text-xs text-gray-400">
+            💡 Comece com 10.0 e deduz conforme os critérios. Mínimo 0.0. Sua nota será registrada em tempo real.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
