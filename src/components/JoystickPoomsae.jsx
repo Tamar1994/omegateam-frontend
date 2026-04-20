@@ -140,7 +140,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t }) {
 
   const renderizarCor = (cor) => {
     const isVermelho = cor === 'vermelho';
-    const deducoes = isVermelho ? dedutoesVermelho : dedutoesAzul;
+    const deducoesAtleta = isVermelho ? dedutoesVermelho : dedutoesAzul;  // ✅ Renomeado para evitar colisão
     const nota = isVermelho ? notaVermelho : notaAzul;
     const corBg = isVermelho ? 'bg-red-900/30 border-red-600' : 'bg-blue-900/30 border-blue-600';
     const corText = isVermelho ? 'text-red-400' : 'text-blue-400';
@@ -178,7 +178,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t }) {
                   <p className="text-xs text-gray-400">{criterio.descricao}</p>
                 </div>
                 <p className="text-lg font-black text-gray-300">
-                  -{(deducoes[criterio.key] || 0).toFixed(2)}
+                  -{(deducoesAtleta[criterio.key] || 0).toFixed(2)}
                 </p>
               </div>
 
@@ -196,7 +196,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t }) {
                 ))}
 
                 {/* Botão de Remover */}
-                {(deducoes[criterio.key] || 0) > 0 && (
+                {(deducoesAtleta[criterio.key] || 0) > 0 && (
                   <button
                     onClick={() => removerDeducao(cor, criterio.key, 0.1)}
                     className="py-2 px-3 rounded-lg text-xs font-bold bg-gray-700 hover:bg-gray-600 text-white border-2 border-gray-600 transition-all active:scale-95"
