@@ -14,6 +14,8 @@ import { ScoreboardTV } from './pages/ScoreboardTV';
 import { ScoreboardTVToken } from './pages/ScoreboardTVToken';
 import { Noticias } from './pages/Noticias';
 import { AtletaEventoHoje } from './pages/AtletaEventoHoje';
+import { AtletaCarreira } from './pages/AtletaCarreira';
+import { Rankings } from './pages/Rankings';
 import './i18n'; // Importa a configuração de i18n
 
 function App() {
@@ -61,6 +63,11 @@ function App() {
 
         {/* ✅ PHASE 2: Athlete Event Page - My Fights Today */}
         <Route path="/evento-hoje" element={<AtletaEventoHoje />} />
+
+        {/* ✅ PHASE 3: Athlete Career & Rankings */}
+        <Route path="/carreira" element={<AtletaCarreira />} />
+        <Route path="/rankings" element={<Rankings />} />
+        <Route path="/rankings/:campeonatoId" element={<Rankings />} />
       </Routes>
     </BrowserRouter>
   );
