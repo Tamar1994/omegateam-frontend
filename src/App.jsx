@@ -13,6 +13,7 @@ import { LateralPanel } from './pages/LateralPanel';
 import { ScoreboardTV } from './pages/ScoreboardTV';
 import { ScoreboardTVToken } from './pages/ScoreboardTVToken';
 import { Noticias } from './pages/Noticias';
+import { AtletaEventoHoje } from './pages/AtletaEventoHoje';
 import './i18n'; // Importa a configuração de i18n
 
 function App() {
@@ -57,6 +58,9 @@ function App() {
 
         {/* Rota de notícias */}
         <Route path="/noticias" element={<Noticias />} />
+
+        {/* ✅ PHASE 2: Athlete Event Page - My Fights Today */}
+        <Route path="/evento-hoje" element={<AtletaEventoHoje />} />
       </Routes>
     </BrowserRouter>
   );
