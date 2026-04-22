@@ -45,7 +45,7 @@ export function ScoreboardTV() {
     };
 
     buscarDados();
-    const intervalo = setInterval(buscarDados, 2000);
+    const intervalo = setInterval(buscarDados, 5000); // 5s: TV display não precisa de 2s
     return () => clearInterval(intervalo);
   }, [id, quadra, faseAnimacao]);
 

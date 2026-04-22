@@ -95,7 +95,7 @@ export function ScoreboardTVToken() {
     };
 
     buscarDados();
-    const intervalo = setInterval(buscarDados, 2000); // Poll a cada 2 segundos
+    const intervalo = setInterval(buscarDados, 5000); // 5s: TV display não precisa de 2s
     return () => clearInterval(intervalo);
   }, [tokenValidado, token]);
 
@@ -309,7 +309,7 @@ function ScoreboardPoomsae({ luta }) {
       } catch {}
     };
     buscar();
-    const iv = setInterval(buscar, 3000);
+    const iv = setInterval(buscar, 6000); // 6s: resultado de poomsae não muda com frequência
     return () => clearInterval(iv);
   }, [lutaId]);
 

@@ -89,8 +89,10 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
       }
     };
 
+    // Só inicia poll se o juiz ainda não submeteu (evita requests desnecessários)
+    if (submetido) return;
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 15000); // 15s: WS já cobre tempo real
     return () => clearInterval(interval);
   }, [luta?.id, submetido]);
 

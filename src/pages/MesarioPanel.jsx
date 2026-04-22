@@ -92,7 +92,7 @@ export function MesarioPanel() {
   useEffect(() => {
     if (!usuarioLogado || quadraAberta) return;
     carregarMinhaQuadra();
-    const intervalo = setInterval(carregarMinhaQuadra, 3000);
+    const intervalo = setInterval(carregarMinhaQuadra, 8000); // 8s: WS já notifica mudanças em tempo real
     return () => clearInterval(intervalo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuarioLogado, quadraAberta, id]);
@@ -841,7 +841,7 @@ Deseja RECUPERAR esta sessão?
     };
 
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 6000); // 6s: resultado de poomsae não muda com frequência
     return () => clearInterval(interval);
   }, [poomsaeFlow, poomsaeMatchVermelho?.id, poomsaeMatchAzul?.id]);
   
