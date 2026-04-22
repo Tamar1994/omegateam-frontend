@@ -9,6 +9,7 @@ export function Live() {
   const [campeonato, setCampeonato] = useState(null);
   const [lutas, setLutas] = useState([]);
   const [horaAtual, setHoraAtual] = useState(new Date());
+  const [poomsaeData, setPoomsaeData] = useState({}); // keyed by luta._id → {vermelho, azul}
   const wsLive = useRef(null);
 
   // Relógio no topo da tela
@@ -110,13 +111,45 @@ export function Live() {
     };
   }, [id, campeonato]);
 
+  // ─── Poll poomsae match data for active Poomsae lutas ────────────
+  useEffect(() => {
+    const poomsaeLutas = lutas.filter(l => l.status === 'Em Andamento' && l.modalidade === 'Poomsae');
+    if (poomsaeLutas.length === 0) return;
+
+    const fetchPoomsae = async () => {
+      const updates = {};
+      for (const luta of poomsaeLutas) {
+        try {
+          const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${luta._id}`);
+          if (!resp.ok) continue;
+          const matches = await resp.json();
+          const vermelho = matches.find(m => m.atleta_id && luta.atleta_vermelho?.includes(m.atleta_id));
+          const azul = matches.find(m => m.atleta_id && luta.atleta_azul?.includes(m.atleta_id));
+          // fallback: by order (first = vermelho, second = azul)
+          const ordered = matches.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0));
+          updates[luta._id] = {
+            vermelho: vermelho || ordered[0] || null,
+            azul: azul || ordered[1] || null,
+          };
+        } catch (_) {}
+      }
+      if (Object.keys(updates).length > 0) {
+        setPoomsaeData(prev => ({ ...prev, ...updates }));
+      }
+    };
+
+    fetchPoomsae();
+    const interval = setInterval(fetchPoomsae, 5000);
+    return () => clearInterval(interval);
+  }, [lutas]);
+
   if (!campeonato) {
     return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white font-bold text-2xl">Carregando Painel Live...</div>;
   }
 
   // Filtra as lutas
   const lutasEmAndamento = lutas.filter(l => l.status === 'Em Andamento');
-  const proximasLutas = lutas.filter(l => l.status === 'Aguardando Chamada').slice(0, 8); // Pega as 8 próximas
+  const proximasLutas = lutas.filter(l => l.status === 'Aguardando Chamada').slice(0, 8);
 
   // Função auxiliar para buscar o nome da categoria no campeonato
   const getNomeCategoria = (idCategoria) => {
@@ -176,14 +209,53 @@ export function Live() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex-1 bg-gray-900 p-6 flex flex-col items-center justify-center text-center">
-                      <p className="text-gray-400 text-sm mb-1 uppercase">Apresentação Poomsae</p>
-                      <div className="flex flex-col gap-2 items-center w-full">
-                        <div className="text-red-400 text-sm font-bold">🔴 {luta.atleta_vermelho.split(' (')[0]}</div>
-                        <div className="text-xs text-gray-500">vs</div>
-                        <div className="text-blue-400 text-sm font-bold">🔵 {luta.atleta_azul.split(' (')[0]}</div>
-                      </div>
-                    </div>
+                    // ── POOMSAE card with WT scores ──
+                    (() => {
+                      const pd = poomsaeData[luta._id];
+                      const mv = pd?.vermelho;
+                      const ma = pd?.azul;
+
+                      const AtletaScore = ({ match, atletaNome, cor }) => {
+                        const res = match?.resultado;
+                        const isAtivo = match?.status === 'Em Andamento';
+                        const scores = match?._scores_count || 0;
+                        return (
+                          <div className={`p-3 ${cor === 'red' ? 'bg-red-900/30' : 'bg-blue-900/30'}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-xs font-black ${cor === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                                {cor === 'red' ? '🔴' : '🔵'} {atletaNome}
+                              </span>
+                              {isAtivo && <span className="text-xs text-yellow-400 animate-pulse">♦ Ao Vivo</span>}
+                            </div>
+                            {res ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-white text-2xl font-black">{res.pontuacao_final?.toFixed(3)}</span>
+                                <div className="text-xs text-gray-400 leading-tight">
+                                  {res.detalhe_acuracia && <div>Ac: {res.detalhe_acuracia.media?.toFixed(2)}</div>}
+                                  {res.detalhe_apresentacao && <div>Ap: {res.detalhe_apresentacao.media?.toFixed(2)}</div>}
+                                  {res.detalhe_habilidade_tecnica && <div>HT: {res.detalhe_habilidade_tecnica.media?.toFixed(2)}</div>}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-gray-500 text-sm">
+                                {match ? (isAtivo ? 'Apresentando...' : 'Aguardando notas...') : 'A apresentar'}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <div className="flex-1 flex flex-col divide-y divide-gray-800">
+                          <div className="bg-gray-900 px-3 py-1">
+                            <span className="text-gray-500 text-xs uppercase tracking-wider">Poomsae {mv?.tipo || ''}</span>
+                            {mv?.forma_designada && <span className="text-yellow-400 text-xs ml-2">• {mv.forma_designada}</span>}
+                          </div>
+                          <AtletaScore match={mv} atletaNome={luta.atleta_vermelho?.split(' (')[0]} cor="red" />
+                          <AtletaScore match={ma} atletaNome={luta.atleta_azul?.split(' (')[0]} cor="blue" />
+                        </div>
+                      );
+                    })()
                   )}
                 </div>
               ))

@@ -629,7 +629,7 @@ export function LateralPanel() {
         // ==========================================
         // JOYSTICK POOMSAE
         // ==========================================
-        <JoystickPoomsae luta={luta} usuario={usuario} ws={ws} t={t} />
+        <JoystickPoomsae luta={luta} usuario={usuario} ws={ws} t={t} campId={campId} />
       ) : (
         // ==========================================
         // JOYSTICK KYORUGUI (PADRÃO)

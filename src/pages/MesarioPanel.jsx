@@ -46,6 +46,20 @@ export function MesarioPanel() {
   const ws = useRef(null);
 
   // ==========================================
+  // ESTADOS DO POOMSAE WT (ARTIGO 13)
+  // ==========================================
+  // poomsaeFlow: aguardando | apresentando_vermelho | coletando_vermelho |
+  //              apresentando_azul | coletando_azul | resultado | encerrada
+  const [poomsaeFlow, setPoomsaeFlow] = useState('aguardando');
+  const [poomsaeMatchVermelho, setPoomsaeMatchVermelho] = useState(null); // {id, resultado}
+  const [poomsaeMatchAzul, setPoomsaeMatchAzul] = useState(null);
+  const [poomsaeScoresVermelho, setPoomsaeScoresVermelho] = useState({ recebidos: [], pendentes: [] });
+  const [poomsaeScoresAzul, setPoomsaeScoresAzul] = useState({ recebidos: [], pendentes: [] });
+  const [deducoesVermelho, setDeducoesVermelho] = useState({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+  const [deducoesAzul, setDeducoesAzul] = useState({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+  const [tipoPoomsae, setTipoPoomsae] = useState('Recognized'); // 'Recognized' | 'Freestyle'
+
+  // ==========================================
   // 1. CARREGAMENTO E POLLING DO LOBBY
   // ==========================================
   useEffect(() => {
@@ -576,6 +590,203 @@ Deseja RECUPERAR esta sessão?
     setTempoRodando(false); setModoWO(false); setTempo(s); 
     if (statusLuta === 'intervalo') setDuracaoRound(s); 
   };
+
+  // ==========================================
+  // POOMSAE WT: FUNÇÕES DE FLUXO
+  // ==========================================
+
+  const getTempoLimitePoomsae = () => tipoPoomsae === 'Freestyle' ? 100 : 90;
+
+  const extrairAtletaId = (atletaStr) =>
+    atletaStr?.match(/\(([^)]+)\)/)?.[1] || atletaStr || 'desconhecido';
+
+  const criarEIniciarMatchPoomsae = async (atletaCor) => {
+    const atletaStr = atletaCor === 'vermelho' ? lutaAtual.atleta_vermelho : lutaAtual.atleta_azul;
+    const atletaId = extrairAtletaId(atletaStr);
+    const forma = lutaAtual.poomsae_1 || 'Poomsae';
+
+    let matchId = null;
+    // Check for existing active match first
+    try {
+      const existing = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${lutaAtual._id}&status=Em%20Andamento`);
+      if (existing.ok) {
+        const list = await existing.json();
+        const mine = list.find(m => m.atleta_id === atletaId);
+        if (mine) { matchId = mine.id; }
+      }
+    } catch (_) {}
+
+    if (!matchId) {
+      const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          luta_id: lutaAtual._id,
+          campeonato_id: id,
+          atleta_id: atletaId,
+          tipo: tipoPoomsae,
+          forma_designada: forma,
+          divisao: lutaAtual.nome_categoria || 'Geral',
+          rodada: 1,
+          numero_juizes: lateraisConectados.length > 0 ? Math.min(lateraisConectados.length, 7) : 5,
+        })
+      });
+      if (!resp.ok) throw new Error('Erro ao criar match poomsae');
+      const match = await resp.json();
+      matchId = match.id;
+
+      await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/iniciar`, { method: 'POST' });
+    }
+
+    // Broadcast to laterais via WS
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        tipo: 'poomsae_match_iniciado',
+        match_id: matchId,
+        tipo_poomsae: tipoPoomsae,
+        atleta: atletaCor,
+        forma: forma,
+      }));
+    }
+
+    return matchId;
+  };
+
+  const iniciarApresentacaoVermelho = async () => {
+    try {
+      const matchId = await criarEIniciarMatchPoomsae('vermelho');
+      setPoomsaeMatchVermelho({ id: matchId, resultado: null });
+      setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+      setPoomsaeFlow('apresentando_vermelho');
+      resetarRelogio(getTempoLimitePoomsae());
+    } catch (err) {
+      alert('Erro ao iniciar apresentação: ' + err.message);
+    }
+  };
+
+  const encerrarApresentacaoVermelho = () => {
+    setTempoRodando(false);
+    // Flag fora_do_tempo for Freestyle if time didn't reach 90s
+    if (tipoPoomsae === 'Freestyle' && tempo > 10) {
+      applyDeducaoPoomsae('vermelho', 'tempo');
+    }
+    setPoomsaeFlow('coletando_vermelho');
+  };
+
+  const iniciarApresentacaoAzul = async () => {
+    try {
+      const matchId = await criarEIniciarMatchPoomsae('azul');
+      setPoomsaeMatchAzul({ id: matchId, resultado: null });
+      setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+      setPoomsaeFlow('apresentando_azul');
+      resetarRelogio(getTempoLimitePoomsae());
+    } catch (err) {
+      alert('Erro ao iniciar apresentação: ' + err.message);
+    }
+  };
+
+  const encerrarApresentacaoAzul = () => {
+    setTempoRodando(false);
+    if (tipoPoomsae === 'Freestyle' && tempo > 10) {
+      applyDeducaoPoomsae('azul', 'tempo');
+    }
+    setPoomsaeFlow('coletando_azul');
+  };
+
+  const applyDeducaoPoomsae = async (cor, tipo) => {
+    const matchId = cor === 'vermelho' ? poomsaeMatchVermelho?.id : poomsaeMatchAzul?.id;
+    const deducoes = cor === 'vermelho' ? deducoesVermelho : deducoesAzul;
+    const setter = cor === 'vermelho' ? setDeducoesVermelho : setDeducoesAzul;
+
+    const novaDeducao = { ...deducoes };
+    if (tipo === 'zona') novaDeducao.saiu_zona = true;
+    if (tipo === 'tempo') novaDeducao.fora_do_tempo = true;
+    if (tipo === 'kyeong_go') {
+      novaDeducao.num_kyeong_go = Math.min(2, (deducoes.num_kyeong_go || 0) + 1);
+      if (novaDeducao.num_kyeong_go >= 2) novaDeducao.desqualificado = true;
+    }
+    setter(novaDeducao);
+
+    if (matchId) {
+      try {
+        await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/deducoes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(novaDeducao),
+        });
+      } catch (_) {}
+    }
+  };
+
+  const confirmarResultadoPoomsae = () => {
+    const resV = poomsaeMatchVermelho?.resultado;
+    const resA = poomsaeMatchAzul?.resultado;
+    if (!resV || !resA) return;
+
+    const finalV = resV.pontuacao_final ?? 0;
+    const finalA = resA.pontuacao_final ?? 0;
+    declararVencedor(finalV >= finalA ? 'red' : 'blue');
+    setPoomsaeFlow('encerrada');
+  };
+
+  // Reset poomsae flow when a new luta loads
+  useEffect(() => {
+    if (lutaAtual?.modalidade === 'Poomsae') {
+      setPoomsaeFlow('aguardando');
+      setPoomsaeMatchVermelho(null);
+      setPoomsaeMatchAzul(null);
+      setPoomsaeScoresVermelho({ recebidos: [], pendentes: [] });
+      setPoomsaeScoresAzul({ recebidos: [], pendentes: [] });
+      setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+      setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+      setTipoPoomsae(lutaAtual.tipo_poomsae || 'Recognized');
+    }
+  }, [lutaAtual?._id]);
+
+  // Poll scores while collecting
+  useEffect(() => {
+    const flow = poomsaeFlow;
+    if (flow !== 'coletando_vermelho' && flow !== 'coletando_azul') return;
+
+    const matchId = flow === 'coletando_vermelho' ? poomsaeMatchVermelho?.id : poomsaeMatchAzul?.id;
+    if (!matchId) return;
+
+    const poll = async () => {
+      try {
+        const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/scores`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (flow === 'coletando_vermelho') {
+          setPoomsaeScoresVermelho(data);
+        } else {
+          setPoomsaeScoresAzul(data);
+        }
+
+        // All judges submitted — fetch result
+        if (Array.isArray(data.pendentes) && data.pendentes.length === 0 && Array.isArray(data.recebidos) && data.recebidos.length > 0) {
+          const mResp = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}`);
+          if (mResp.ok) {
+            const mData = await mResp.json();
+            if (mData.resultado) {
+              if (flow === 'coletando_vermelho') {
+                setPoomsaeMatchVermelho(prev => ({ ...prev, resultado: mData.resultado }));
+                setPoomsaeFlow('apresentando_azul');
+                resetarRelogio(getTempoLimitePoomsae());
+              } else {
+                setPoomsaeMatchAzul(prev => ({ ...prev, resultado: mData.resultado }));
+                setPoomsaeFlow('resultado');
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    };
+
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, [poomsaeFlow, poomsaeMatchVermelho?.id, poomsaeMatchAzul?.id]);
   
   const iniciarWO = () => { 
     if (window.confirm(t('iniciar_wo'))) { setTempoRodando(false); setModoWO(true); setTempo(60); setTempoRodando(true); } 
@@ -748,218 +959,351 @@ Deseja RECUPERAR esta sessão?
           // ==========================================
           // LAYOUT EXCLUSIVO PARA POOMSAE (CHAVES 1v1)
           // ==========================================
-          <section className="lg:col-span-12 space-y-6">
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* LADO VERMELHO (CHONG) */}
-            <div className={`flex flex-col bg-red-900 bg-opacity-20 border-4 rounded-2xl p-6 relative transition-all ${statusLuta === 'turno_chong_p1' || statusLuta === 'turno_chong_p2' ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)]' : vencedor === 'red' ? 'border-yellow-400 shadow-[0_0_50px_rgba(250,204,21,0.5)]' : 'border-red-900'}`}>
-              <h2 className="text-3xl font-black text-center text-white truncate">{lutaAtual.atleta_vermelho?.split(' (')[0] || t('atleta_chong')}</h2>
-              <p className="text-center text-red-400 font-bold tracking-widest uppercase mb-6">{t('atleta_chong')}</p>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-black bg-opacity-40 p-4 rounded-xl text-center border border-red-900/50">
-                  <p className="text-gray-400 text-xs font-bold uppercase mb-1">{t('primeiro_poomsae')}</p>
-                  <p className="text-sm font-bold text-red-300 mb-2">{lutaAtual.poomsae_1 || t('aguardando_sorteio')}</p>
-                  <p className="text-4xl font-black text-white">{placar.chongP1 > 0 ? placar.chongP1.toFixed(2) : '--'}</p>
-                </div>
-                <div className="bg-black bg-opacity-40 p-4 rounded-xl text-center border border-red-900/50">
-                  <p className="text-gray-400 text-xs font-bold uppercase mb-1">{t('segundo_poomsae')}</p>
-                  <p className="text-sm font-bold text-red-300 mb-2">{lutaAtual.poomsae_2 || (lutaAtual.poomsae_1?.includes('Faixa') ? t('nao_aplicavel') : t('aguardando_sorteio'))}</p>
-                  <p className="text-4xl font-black text-white">{placar.chongP2 > 0 ? placar.chongP2.toFixed(2) : '--'}</p>
-                </div>
-              </div>
+          <section className="lg:col-span-12 space-y-4">
 
-              <div className="mt-auto bg-red-950 rounded-xl p-4 text-center flex justify-between items-center border border-red-800">
-                <span className="text-red-200 font-bold uppercase tracking-wider">{t('media_final')}</span>
-                <span className="text-5xl font-black text-white">
-                  {placar.chongP1 > 0 ? (((placar.chongP1) + (placar.chongP2 || placar.chongP1)) / (placar.chongP2 > 0 ? 2 : 1)).toFixed(2) : '0.00'}
-                </span>
+            {/* ── Tipo Poomsae + atletas ── */}
+            <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-xl px-5 py-3">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Modalidade</p>
+                <p className="font-black text-white text-lg">{tipoPoomsae} Poomsae</p>
+                {lutaAtual.poomsae_1 && <p className="text-yellow-400 text-sm font-bold">Forma: {lutaAtual.poomsae_1}</p>}
+              </div>
+              <div className="flex gap-2">
+                {['Recognized', 'Freestyle'].map(tipo => (
+                  <button
+                    key={tipo}
+                    onClick={() => setTipoPoomsae(tipo)}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${tipoPoomsae === tipo ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                  >
+                    {tipo}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* LADO AZUL (HONG) */}
-            <div className={`flex flex-col bg-blue-900 bg-opacity-20 border-4 rounded-2xl p-6 relative transition-all ${statusLuta === 'turno_hong_p1' || statusLuta === 'turno_hong_p2' ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.5)]' : vencedor === 'blue' ? 'border-yellow-400 shadow-[0_0_50px_rgba(250,204,21,0.5)]' : 'border-blue-900'}`}>
-              <h2 className="text-3xl font-black text-center text-white truncate">{lutaAtual.atleta_azul?.split(' (')[0] || t('atleta_hong')}</h2>
-              <p className="text-center text-blue-400 font-bold tracking-widest uppercase mb-6">{t('atleta_hong')}</p>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-black bg-opacity-40 p-4 rounded-xl text-center border border-blue-900/50">
-                  <p className="text-gray-400 text-xs font-bold uppercase mb-1">{t('primeiro_poomsae')}</p>
-                  <p className="text-sm font-bold text-blue-300 mb-2">{lutaAtual.poomsae_1 || t('aguardando_sorteio')}</p>
-                  <p className="text-4xl font-black text-white">{placar.hongP1 > 0 ? placar.hongP1.toFixed(2) : '--'}</p>
-                </div>
-                <div className="bg-black bg-opacity-40 p-4 rounded-xl text-center border border-blue-900/50">
-                  <p className="text-gray-400 text-xs font-bold uppercase mb-1">{t('segundo_poomsae')}</p>
-                  <p className="text-sm font-bold text-blue-300 mb-2">{lutaAtual.poomsae_2 || (lutaAtual.poomsae_1?.includes('Faixa') ? t('nao_aplicavel') : t('aguardando_sorteio'))}</p>
-                  <p className="text-4xl font-black text-white">{placar.hongP2 > 0 ? placar.hongP2.toFixed(2) : '--'}</p>
-                </div>
+            {/* ── LATERAL ALERTA ── */}
+            {alertaLateralCaiu && (
+              <div className="bg-red-900/60 border-2 border-red-500 rounded-xl p-3 text-center animate-pulse">
+                <p className="text-red-300 font-black">⚠️ LATERAL DESCONECTOU — A luta foi pausada.</p>
+                <p className="text-xs text-red-400 mt-1">{alertaLateralCaiu}</p>
               </div>
+            )}
 
-              <div className="mt-auto bg-blue-950 rounded-xl p-4 text-center flex justify-between items-center border border-blue-800">
-                <span className="text-blue-200 font-bold uppercase tracking-wider">{t('media_final')}</span>
-                <span className="text-5xl font-black text-white">
-                  {placar.hongP1 > 0 ? (((placar.hongP1) + (placar.hongP2 || placar.hongP1)) / (placar.hongP2 > 0 ? 2 : 1)).toFixed(2) : '0.00'}
-                </span>
-              </div>
-            </div>
-
-            {/* CONTROLES DO MESÁRIO (MÁQUINA DE ESTADOS DO POOMSAE) */}
-            <div className="lg:col-span-12 bg-gray-800 rounded-2xl p-6 border-2 border-gray-700 flex flex-col items-center shadow-xl mt-4">
-              
-              {/* 🔴 ALERTA: LATERAL DESCONECTOU DURANTE A LUTA */}
-              {alertaLateralCaiu && (
-                <div className="w-full bg-red-900/60 border-3 border-red-500 rounded-xl p-4 text-center mb-6 animate-pulse">
-                  <p className="text-red-300 font-black text-lg">
-                    ⚠️ LATERAL DESCONECTOU!
-                  </p>
-                  <p className="text-xs text-red-400 mt-2">A luta foi pausada. Aguarde a reconexão do lateral...</p>
-                  <p className="text-sm text-red-300 mt-2 font-bold">{alertaLateralCaiu}</p>
-                </div>
-              )}
-
-              {statusLuta === 'encerrada' ? (
-                <div className="text-center w-full max-w-md">
-                  <Trophy size={60} className="text-yellow-400 mx-auto mb-4" />
-                  <h3 className="text-3xl font-black text-white mb-6 uppercase">{t('vencedor_label')} {vencedor === 'red' ? t('atleta_chong') : t('atleta_hong')}</h3>
-                  <button onClick={encerrarESalvarLuta} className="w-full bg-omega-red hover:bg-red-700 text-white px-8 py-5 rounded-xl font-black text-xl uppercase tracking-wider transition-colors shadow-lg flex justify-center gap-3">
-                    {t('salvar_proxima_luta')} <ArrowRight size={24} />
+            {/* ─────────────────────────────────────────────────────
+                FLOW: AGUARDANDO — Escolher quem vai primeiro
+            ───────────────────────────────────────────────────── */}
+            {poomsaeFlow === 'aguardando' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-red-900/20 border-2 border-red-800 rounded-2xl p-6 flex flex-col items-center gap-4">
+                  <h2 className="text-2xl font-black text-white truncate">{lutaAtual.atleta_vermelho?.split(' (')[0]}</h2>
+                  <p className="text-red-400 font-bold uppercase tracking-widest text-sm">Chong — 1º a apresentar</p>
+                  <button
+                    onClick={iniciarApresentacaoVermelho}
+                    className="w-full bg-red-600 hover:bg-red-500 text-white py-4 rounded-xl font-black text-lg uppercase tracking-wider transition-colors shadow-lg"
+                  >
+                    ▶ Iniciar Apresentação
                   </button>
                 </div>
-              ) : (
-                <div className="w-full flex flex-col md:flex-row items-center justify-between gap-6">
-                  
-                  {/* Cronômetro de Apresentação */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-gray-400 font-bold uppercase text-sm mb-2">{t('tempo_limite_90s')}</span>
-                    <div className={`text-6xl font-black tabular-nums ${tempo <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                      {formatarTempo(tempo)}
-                    </div>
-                    <div className="flex gap-2 mt-4">
-                      <button onClick={toggleTempo} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-bold">
-                        {tempoRodando ? <Pause size={20}/> : <Play size={20}/>}
-                      </button>
-                      <button onClick={() => resetarRelogio(90)} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-bold"><RotateCcw size={20}/></button>
-                    </div>
-                  </div>
-
-                  {/* Controle de Turno Chong/Hong */}
-                  <div className="flex-1 flex flex-col items-center border-l border-r border-gray-700 px-8">
-                    <p className="text-yellow-400 font-black uppercase tracking-widest text-lg mb-4 text-center">
-                      {statusLuta === 'andamento' && t('aguardando_inicio')}
-                      {statusLuta === 'turno_chong_p1' && t('apresentacao_chong_1')}
-                      {statusLuta === 'turno_hong_p1' && t('apresentacao_hong_1')}
-                      {statusLuta === 'turno_chong_p2' && t('apresentacao_chong_2')}
-                      {statusLuta === 'turno_hong_p2' && t('apresentacao_hong_2')}
-                    </p>
-                    
-                    <button 
-                      onClick={() => {
-                        let novoStatus;
-                        // Máquina de estados
-                        if (statusLuta === 'andamento') {
-                          novoStatus = 'turno_chong_p1';
-                          salvarTurnoPoomsae('chong_p1');
-                        }
-                        else if (statusLuta === 'turno_chong_p1') {
-                          novoStatus = 'turno_hong_p1';
-                          salvarTurnoPoomsae('hong_p1');
-                        }
-                        else if (statusLuta === 'turno_hong_p1') {
-                          novoStatus = lutaAtual.poomsae_2 ? 'turno_chong_p2' : 'encerrada';
-                          salvarTurnoPoomsae(lutaAtual.poomsae_2 ? 'chong_p2' : null);
-                        }
-                        else if (statusLuta === 'turno_chong_p2') {
-                          novoStatus = 'turno_hong_p2';
-                          salvarTurnoPoomsae('hong_p2');
-                        }
-                        else if (statusLuta === 'turno_hong_p2') {
-                          novoStatus = 'encerrada';
-                          salvarTurnoPoomsae(null);
-                        }
-                        
-                        if (novoStatus) setStatusLuta(novoStatus);
-                        resetarRelogio(90);
-                      }}
-                      className="bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl font-black text-xl uppercase tracking-widest shadow-lg shadow-green-900/50 transition-all w-full max-w-sm"
-                    >
-                      {t('avancar_turno')}
-                    </button>
-                    <p className="text-xs text-gray-500 mt-3 text-center">{t('mesario_clica_avanca')}</p>
-                  </div>
-
-                  {/* Notas dos Árbitros / Status Poomsae */}
-                  <div className="flex flex-col gap-3 w-full max-w-sm">
-                    <span className="text-gray-400 font-bold uppercase text-sm text-center">{t('notas_arbitros')}</span>
-                    
-                    {poomsaeStatus?.status === 'em_progresso' ? (
-                      <>
-                        {/* Exibir accuracy */}
-                        {(poomsaeStatus.accuracy?.vermelho?.media !== null || poomsaeStatus.accuracy?.azul?.media !== null) && (
-                          <div className="grid grid-cols-2 gap-2 mb-2">
-                            {statusLuta.includes('chong') && (
-                              <div className="bg-red-900/30 border border-red-700 rounded p-2 text-center">
-                                <p className="text-xs text-red-400 uppercase font-bold mb-1">Accuracy Chong</p>
-                                <p className="text-2xl font-black text-white">{poomsaeStatus.accuracy?.vermelho?.media?.toFixed(2) || '...'}</p>
-                                <p className="text-xs text-red-300">{poomsaeStatus.accuracy?.vermelho?.votos}</p>
-                              </div>
-                            )}
-                            {statusLuta.includes('hong') && (
-                              <div className="bg-blue-900/30 border border-blue-700 rounded p-2 text-center">
-                                <p className="text-xs text-blue-400 uppercase font-bold mb-1">Accuracy Hong</p>
-                                <p className="text-2xl font-black text-white">{poomsaeStatus.accuracy?.azul?.media?.toFixed(2) || '...'}</p>
-                                <p className="text-xs text-blue-300">{poomsaeStatus.accuracy?.azul?.votos}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* Exibir apresentação se houver */}
-                        {(poomsaeStatus.apresentacao?.vermelho?.media || poomsaeStatus.apresentacao?.azul?.media) && (
-                          <div className="grid grid-cols-2 gap-2">
-                            {statusLuta.includes('chong') && poomsaeStatus.apresentacao?.vermelho?.media && (
-                              <div className="bg-red-900/30 border border-red-700 rounded p-2 text-center text-xs">
-                                <p className="text-red-400 uppercase font-bold mb-1">Apresentação</p>
-                                <p className="text-lg font-black text-white">{poomsaeStatus.apresentacao?.vermelho?.media?.total?.toFixed(2)}</p>
-                              </div>
-                            )}
-                            {statusLuta.includes('hong') && poomsaeStatus.apresentacao?.azul?.media && (
-                              <div className="bg-blue-900/30 border border-blue-700 rounded p-2 text-center text-xs">
-                                <p className="text-blue-400 uppercase font-bold mb-1">Apresentação</p>
-                                <p className="text-lg font-black text-white">{poomsaeStatus.apresentacao?.azul?.media?.total?.toFixed(2)}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {!poomsaeStatus.todos_completos && (
-                          <p className="text-xs text-gray-400 text-center mt-2">Aguardando mais árbitros...</p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {/* Fallback: Botões de simulação */}
-                        <button onClick={() => setPlacar(p => ({...p, chongP1: 7.23}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P1 (7.23)</button>
-                        <button onClick={() => setPlacar(p => ({...p, hongP1: 7.10}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P1 (7.10)</button>
-                        {lutaAtual.poomsae_2 && (
-                          <>
-                            <button onClick={() => setPlacar(p => ({...p, chongP2: 7.45}))} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-2 rounded font-bold text-sm border border-red-700/50">{t('nota')} {t('atleta_chong')} P2 (7.45)</button>
-                            <button onClick={() => setPlacar(p => ({...p, hongP2: 7.30}))} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-4 py-2 rounded font-bold text-sm border border-blue-700/50">{t('nota')} {t('atleta_hong')} P2 (7.30)</button>
-                          </>
-                        )}
-                      </>
-                    )}
-                    
-                    <button onClick={() => {
-                        const mediaChong = ((placar.chongP1 || 0) + (placar.chongP2 || placar.chongP1 || 0)) / (lutaAtual.poomsae_2 ? 2 : 1);
-                        const mediaHong = ((placar.hongP1 || 0) + (placar.hongP2 || placar.hongP1 || 0)) / (lutaAtual.poomsae_2 ? 2 : 1);
-                        declararVencedor(mediaChong > mediaHong ? 'red' : 'blue');
-                    }} className="mt-2 bg-yellow-600 hover:bg-yellow-500 text-white px-4 py-2 rounded font-black text-sm uppercase">{t('verificar_vencedor')}</button>
+                <div className="bg-blue-900/20 border-2 border-blue-800 rounded-2xl p-6 flex flex-col items-center gap-4">
+                  <h2 className="text-2xl font-black text-white truncate">{lutaAtual.atleta_azul?.split(' (')[0]}</h2>
+                  <p className="text-blue-400 font-bold uppercase tracking-widest text-sm">Hong — 2º a apresentar</p>
+                  <div className="w-full bg-gray-700 text-gray-500 py-4 rounded-xl font-black text-lg uppercase text-center">
+                    Aguardando Chong...
                   </div>
                 </div>
-              )}
-            </div>
-            </div>
+              </div>
+            )}
+
+            {/* ─────────────────────────────────────────────────────
+                FLOW: APRESENTANDO / COLETANDO
+            ───────────────────────────────────────────────────── */}
+            {['apresentando_vermelho', 'coletando_vermelho', 'apresentando_azul', 'coletando_azul'].includes(poomsaeFlow) && (() => {
+              const isVerm = poomsaeFlow.includes('vermelho');
+              const isApresentando = poomsaeFlow.startsWith('apresentando');
+              const atletaNome = (isVerm ? lutaAtual.atleta_vermelho : lutaAtual.atleta_azul)?.split(' (')[0];
+              const cor = isVerm ? 'red' : 'blue';
+              const deducoes = isVerm ? deducoesVermelho : deducoesAzul;
+              const scores = isVerm ? poomsaeScoresVermelho : poomsaeScoresAzul;
+              const resOutro = isVerm ? null : poomsaeMatchVermelho?.resultado;
+
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                  {/* Coluna 1: Atleta + Deduções + Timer */}
+                  <div className={`lg:col-span-1 ${isVerm ? 'bg-red-900/20 border-red-800' : 'bg-blue-900/20 border-blue-800'} border-2 rounded-2xl p-5 flex flex-col gap-4`}>
+                    <div className="text-center">
+                      <p className={`text-xs font-black tracking-widest uppercase mb-1 ${isVerm ? 'text-red-400' : 'text-blue-400'}`}>
+                        {isVerm ? '🔴 Chong' : '🔵 Hong'} — {isApresentando ? 'Apresentando' : 'Aguardando notas'}
+                      </p>
+                      <h2 className="text-2xl font-black text-white truncate">{atletaNome}</h2>
+                      <p className="text-gray-400 text-sm">{lutaAtual.poomsae_1 || 'Forma a definir'}</p>
+                    </div>
+
+                    {/* Timer */}
+                    <div className="text-center">
+                      <div className={`text-6xl font-black tabular-nums ${tempo <= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                        {formatarTempo(tempo)}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {tipoPoomsae === 'Freestyle' ? 'Livre: 90–100 s (fora = −0.3)' : 'Máx: 90 s'}
+                      </p>
+                      {isApresentando && (
+                        <div className="flex gap-2 mt-3 justify-center">
+                          <button onClick={toggleTempo} className="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg font-bold">
+                            {tempoRodando ? <Pause size={20}/> : <Play size={20}/>}
+                          </button>
+                          <button onClick={() => resetarRelogio(getTempoLimitePoomsae())} className="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg font-bold">
+                            <RotateCcw size={20}/>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Deduções */}
+                    {isApresentando && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider text-center">Deduções</p>
+                        <button
+                          onClick={() => applyDeducaoPoomsae(isVerm ? 'vermelho' : 'azul', 'zona')}
+                          className={`w-full py-2 rounded-lg font-bold text-sm transition-colors ${deducoes.saiu_zona ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                        >
+                          {deducoes.saiu_zona ? '✓ ' : ''}Saiu da Zona −0.3
+                        </button>
+                        <button
+                          onClick={() => applyDeducaoPoomsae(isVerm ? 'vermelho' : 'azul', 'tempo')}
+                          className={`w-full py-2 rounded-lg font-bold text-sm transition-colors ${deducoes.fora_do_tempo ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                        >
+                          {deducoes.fora_do_tempo ? '✓ ' : ''}Fora do Tempo −0.3
+                        </button>
+                        <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                          <span className="text-sm font-bold text-gray-300">Kyeong-go</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xl font-black ${deducoes.num_kyeong_go >= 2 ? 'text-red-500 animate-pulse' : deducoes.num_kyeong_go === 1 ? 'text-yellow-400' : 'text-white'}`}>
+                              {deducoes.num_kyeong_go}/2
+                            </span>
+                            <button
+                              onClick={() => applyDeducaoPoomsae(isVerm ? 'vermelho' : 'azul', 'kyeong_go')}
+                              disabled={deducoes.num_kyeong_go >= 2}
+                              className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white px-3 py-1 rounded font-bold text-sm"
+                            >
+                              +1
+                            </button>
+                          </div>
+                        </div>
+                        {deducoes.desqualificado && (
+                          <div className="bg-red-900 border border-red-500 rounded-lg p-2 text-center">
+                            <p className="text-red-300 font-black text-sm">⛔ DESQUALIFICADO</p>
+                            <p className="text-red-400 text-xs">2 Kyeong-go</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Encerrar botão */}
+                    {isApresentando && (
+                      <button
+                        onClick={isVerm ? encerrarApresentacaoVermelho : encerrarApresentacaoAzul}
+                        className={`w-full py-3 rounded-xl font-black text-lg uppercase tracking-wider transition-colors shadow-lg ${isVerm ? 'bg-red-700 hover:bg-red-600' : 'bg-blue-700 hover:bg-blue-600'} text-white`}
+                      >
+                        ■ Encerrar Apresentação
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Coluna 2: Progresso de notas */}
+                  <div className="lg:col-span-1 bg-gray-800 border border-gray-700 rounded-2xl p-5">
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-3 text-center">
+                      {isApresentando ? 'Notas em Tempo Real' : 'Coletando Notas dos Juízes'}
+                    </p>
+                    {scores.recebidos?.length === 0 && scores.pendentes?.length === 0 ? (
+                      <p className="text-gray-500 text-sm text-center py-6">
+                        {isApresentando ? 'Aguardando fim da apresentação...' : 'Aguardando árbitros...'}
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {scores.recebidos?.map((s, i) => (
+                          <div key={i} className="flex items-center justify-between bg-green-900/30 border border-green-700 rounded-lg px-3 py-2">
+                            <span className="text-green-300 text-sm font-bold">Juiz #{s.numero_juiz}</span>
+                            <span className="text-white font-black">{s.total?.toFixed(2) ?? '—'}</span>
+                            <span className="text-xs text-green-400">✓</span>
+                          </div>
+                        ))}
+                        {scores.pendentes?.map((n, i) => (
+                          <div key={i} className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded-lg px-3 py-2">
+                            <span className="text-gray-400 text-sm">Juiz #{n}</span>
+                            <span className="text-gray-600 text-xs animate-pulse">aguardando...</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!isApresentando && scores.pendentes?.length > 0 && (
+                      <p className="text-yellow-400 text-xs text-center mt-3 animate-pulse">
+                        ⏳ {scores.pendentes.length} árbitro(s) faltando...
+                      </p>
+                    )}
+                    {!isApresentando && scores.pendentes?.length === 0 && scores.recebidos?.length > 0 && (
+                      <p className="text-green-400 text-xs text-center mt-3 font-bold">
+                        ✓ Todas as notas recebidas! Calculando...
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Coluna 3: Resultado do outro atleta (se disponível) */}
+                  <div className="lg:col-span-1 bg-gray-800 border border-gray-700 rounded-2xl p-5">
+                    {resOutro ? (
+                      <>
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-3 text-center">
+                          🔴 Resultado Chong
+                        </p>
+                        <div className="text-center mb-4">
+                          <p className="text-gray-400 text-xs">Pontuação Final</p>
+                          <p className="text-white text-5xl font-black">{resOutro.pontuacao_final?.toFixed(3)}</p>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          {resOutro.detalhe_acuracia && (
+                            <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                              <span className="text-gray-400">Acurácia</span>
+                              <span className="text-white font-bold">{resOutro.detalhe_acuracia.media?.toFixed(3)}</span>
+                            </div>
+                          )}
+                          {resOutro.detalhe_apresentacao && (
+                            <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                              <span className="text-gray-400">Apresentação</span>
+                              <span className="text-white font-bold">{resOutro.detalhe_apresentacao.media?.toFixed(3)}</span>
+                            </div>
+                          )}
+                          {resOutro.detalhe_habilidade_tecnica && (
+                            <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                              <span className="text-gray-400">Hab. Técnica</span>
+                              <span className="text-white font-bold">{resOutro.detalhe_habilidade_tecnica.media?.toFixed(3)}</span>
+                            </div>
+                          )}
+                          {resOutro.total_deducoes < 0 && (
+                            <div className="flex justify-between bg-red-900/30 border border-red-800 rounded px-3 py-1">
+                              <span className="text-red-400">Deduções</span>
+                              <span className="text-red-400 font-bold">{resOutro.total_deducoes?.toFixed(1)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center">
+                        <p className="text-gray-500 text-sm">
+                          {isVerm ? 'Hong ainda não apresentou' : 'Resultado Chong aparecerá aqui'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })()}
+
+            {/* ─────────────────────────────────────────────────────
+                FLOW: RESULTADO FINAL — Comparação lado a lado
+            ───────────────────────────────────────────────────── */}
+            {poomsaeFlow === 'resultado' && poomsaeMatchVermelho?.resultado && poomsaeMatchAzul?.resultado && (() => {
+              const resV = poomsaeMatchVermelho.resultado;
+              const resA = poomsaeMatchAzul.resultado;
+              const finalV = resV.pontuacao_final ?? 0;
+              const finalA = resA.pontuacao_final ?? 0;
+              const liderando = finalV > finalA ? 'red' : finalA > finalV ? 'blue' : 'tie';
+
+              const AtletaResultado = ({ res, atletaNome, cor }) => (
+                <div className={`flex-1 rounded-2xl p-6 border-4 ${cor === 'red' ? (liderando === 'red' ? 'bg-red-900/30 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.4)]' : 'bg-red-900/20 border-red-800') : (liderando === 'blue' ? 'bg-blue-900/30 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.4)]' : 'bg-blue-900/20 border-blue-800')}`}>
+                  <p className={`text-xs font-black tracking-widest uppercase mb-1 ${cor === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                    {cor === 'red' ? '🔴 Chong' : '🔵 Hong'}
+                    {liderando === cor && <span className="ml-2 text-yellow-400">★ Liderando</span>}
+                  </p>
+                  <h3 className="text-xl font-black text-white truncate mb-3">{atletaNome}</h3>
+
+                  <div className="text-center mb-4 bg-black/40 rounded-xl py-3">
+                    <p className="text-xs text-gray-400 mb-1">Pontuação Final</p>
+                    <p className="text-white text-5xl font-black">{res.pontuacao_final?.toFixed(3)}</p>
+                    {res.total_deducoes < 0 && (
+                      <p className="text-red-400 text-xs mt-1">Deduções: {res.total_deducoes?.toFixed(1)}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    {res.detalhe_acuracia && (
+                      <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                        <span className="text-gray-400">Acurácia</span>
+                        <span className="text-white font-bold">{res.detalhe_acuracia.media?.toFixed(3)}</span>
+                      </div>
+                    )}
+                    {res.detalhe_apresentacao && (
+                      <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                        <span className="text-gray-400">Apresentação</span>
+                        <span className="text-white font-bold">{res.detalhe_apresentacao.media?.toFixed(3)}</span>
+                      </div>
+                    )}
+                    {res.detalhe_habilidade_tecnica && (
+                      <div className="flex justify-between bg-gray-900 rounded px-3 py-1">
+                        <span className="text-gray-400">Hab. Técnica</span>
+                        <span className="text-white font-bold">{res.detalhe_habilidade_tecnica.media?.toFixed(3)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {res.soma_total_scores && (
+                    <div className="mt-2 text-xs text-gray-500 text-center">
+                      Soma bruta: {res.soma_total_scores?.toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              );
+
+              return (
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <AtletaResultado
+                      res={resV}
+                      atletaNome={lutaAtual.atleta_vermelho?.split(' (')[0]}
+                      cor="red"
+                    />
+                    <AtletaResultado
+                      res={resA}
+                      atletaNome={lutaAtual.atleta_azul?.split(' (')[0]}
+                      cor="blue"
+                    />
+                  </div>
+
+                  {liderando === 'tie' && (
+                    <div className="bg-yellow-900/30 border border-yellow-500 rounded-xl p-3 text-center">
+                      <p className="text-yellow-300 font-black">⚠️ EMPATE — Aplicar critério de desempate WT</p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={confirmarResultadoPoomsae}
+                    className="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-black text-xl uppercase tracking-wider shadow-lg transition-colors"
+                  >
+                    {liderando === 'tie' ? 'Confirmar (Desempate Necessário)' : `Confirmar Vitória ${liderando === 'red' ? 'Chong' : 'Hong'}`}
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* ─────────────────────────────────────────────────────
+                FLOW: ENCERRADA
+            ───────────────────────────────────────────────────── */}
+            {(poomsaeFlow === 'encerrada' || statusLuta === 'encerrada') && (
+              <div className="flex flex-col items-center gap-6 py-6">
+                <Trophy size={60} className="text-yellow-400" />
+                <h3 className="text-3xl font-black text-white uppercase">
+                  Vencedor: {vencedor === 'red' ? (lutaAtual.atleta_vermelho?.split(' (')[0]) : (lutaAtual.atleta_azul?.split(' (')[0])}
+                </h3>
+                <button
+                  onClick={encerrarESalvarLuta}
+                  disabled={loadingLuta}
+                  className="bg-omega-red hover:bg-red-700 text-white px-10 py-5 rounded-xl font-black text-xl uppercase tracking-wider transition-colors shadow-lg flex items-center gap-3"
+                >
+                  {loadingLuta ? t('salvando') : t('salvar_proxima_luta')} <ArrowRight size={24} />
+                </button>
+              </div>
+            )}
+
           </section>
 
         ) : (

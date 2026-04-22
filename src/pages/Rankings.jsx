@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Trophy, Users, AlertCircle, Loader2, Podium } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, AlertCircle, Loader2, Award } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -191,7 +191,7 @@ export function Rankings() {
           </button>
           
           <h1 className="text-4xl font-black mb-2 flex items-center gap-3">
-            <Podium size={36} />
+            <Award size={36} />
             {t('rankings') || 'Rankings'}
           </h1>
           <p className="text-gray-300">
