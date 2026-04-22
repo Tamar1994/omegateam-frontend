@@ -422,43 +422,7 @@ Deseja RECUPERAR esta sessão?
       const res = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/proxima-luta`);
       if (res.ok) {
         const dadosLuta = await res.json();
-        setLutaAtual(dadosLuta);
-        
-        let tempoCalculado = 60;
-        const cat = (dadosLuta.nome_categoria || "").toLowerCase();
-        
-        // Regra de tempo para Kyorugui e Poomsae
-        if (dadosLuta.modalidade === 'Poomsae') tempoCalculado = 90;
-        else if (cat.includes('festival') || cat.includes('mirim')) tempoCalculado = 45;
-        else if (cat.includes('preta') || cat.includes('dan')) {
-          if (cat.includes('adulto') || cat.includes('sub 21')) tempoCalculado = 120;
-          else tempoCalculado = 90;
-        }
-
-        setDuracaoRound(tempoCalculado);
-        setTempo(tempoCalculado);
-        setPlacar({ round: 1, redPontos: 0, bluePontos: 0, redFaltas: 0, blueFaltas: 0 });
-        setVencedor(null);
-        setStatusLuta('andamento');
-        setModoWO(false);
-        setTempoRodando(false);
-
-        // 🎬 NOTIFICAR OS LATERAIS SOBRE A LUTA
-        try {
-          console.log('📢 Notificando laterais sobre luta iniciada...');
-          await fetch(`${API_BASE_URL}/api/lutas/${dadosLuta._id}/notificar-laterais`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              modalidade: dadosLuta.modalidade,
-              atleta_vermelho: dadosLuta.atleta_vermelho,
-              atleta_azul: dadosLuta.atleta_azul
-            })
-          });
-          console.log('✅ Laterais notificados');
-        } catch (err) {
-          console.error('❌ Erro ao notificar laterais:', err);
-        }
+        await _aplicarLuta(dadosLuta, true);
       } else {
         alert(t('nao_ha_mais_lutas_fila'));
         setQuadraAberta(false);
@@ -467,6 +431,99 @@ Deseja RECUPERAR esta sessão?
       alert(t('erro_buscar_proxima_luta'));
     } finally {
       setLoadingLuta(false);
+    }
+  };
+
+  // Restaura luta Em Andamento sem puxar nova — usado no reconectar do mesário
+  const abrirOuRetornarParaLuta = async () => {
+    setLoadingLuta(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/luta-em-andamento`);
+      if (res.ok) {
+        const dadosLuta = await res.json();
+        await _aplicarLuta(dadosLuta, false); // false = reconexão, não notifica laterais novamente
+        setQuadraAberta(true);
+      } else {
+        // Nenhuma luta ativa → puxar próxima normalmente
+        const res2 = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/quadras/${minhaQuadra.numero_quadra}/proxima-luta`);
+        if (res2.ok) {
+          const dadosLuta = await res2.json();
+          await _aplicarLuta(dadosLuta, true);
+          setQuadraAberta(true);
+        } else {
+          alert(t('nao_ha_mais_lutas_fila'));
+        }
+      }
+    } catch {
+      alert(t('erro_buscar_proxima_luta'));
+    } finally {
+      setLoadingLuta(false);
+    }
+  };
+
+  // Função interna: aplica dados de uma luta no estado do painel
+  const _aplicarLuta = async (dadosLuta, notificarLaterais) => {
+    setLutaAtual(dadosLuta);
+    setVencedor(null);
+    setStatusLuta('andamento');
+    setModoWO(false);
+    setTempoRodando(false);
+    setPlacar({ round: 1, redPontos: 0, bluePontos: 0, redFaltas: 0, blueFaltas: 0 });
+
+    let tempoCalculado = 60;
+    const cat = (dadosLuta.nome_categoria || "").toLowerCase();
+    if (dadosLuta.modalidade === 'Poomsae') tempoCalculado = 90;
+    else if (cat.includes('festival') || cat.includes('mirim')) tempoCalculado = 45;
+    else if (cat.includes('preta') || cat.includes('dan')) {
+      tempoCalculado = (cat.includes('adulto') || cat.includes('sub 21')) ? 120 : 90;
+    }
+    setDuracaoRound(tempoCalculado);
+    setTempo(tempoCalculado);
+
+    // Restaurar flow Poomsae WT a partir dos matches existentes
+    if (dadosLuta.modalidade === 'Poomsae') {
+      try {
+        const matchRes = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${dadosLuta._id}`);
+        if (matchRes.ok) {
+          const matches = await matchRes.json();
+          const ordered = matches.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0));
+          const matchVerm = ordered[0] || null;
+          const matchAzul = ordered[1] || null;
+
+          if (matchVerm) setPoomsaeMatchVermelho({ id: matchVerm._id, resultado: matchVerm.resultado || null });
+          if (matchAzul) setPoomsaeMatchAzul({ id: matchAzul._id, resultado: matchAzul.resultado || null });
+
+          if (matchVerm?.resultado && matchAzul?.resultado) {
+            setPoomsaeFlow('resultado');
+          } else if (matchAzul?.status === 'Em Andamento') {
+            setPoomsaeFlow('apresentando_azul');
+          } else if (matchAzul) {
+            setPoomsaeFlow('coletando_azul');
+          } else if (matchVerm?.status === 'Em Andamento') {
+            setPoomsaeFlow('apresentando_vermelho');
+          } else if (matchVerm) {
+            setPoomsaeFlow('coletando_vermelho');
+          } else {
+            setPoomsaeFlow('aguardando');
+          }
+        }
+      } catch { /* flow fica em 'aguardando' */ }
+    }
+
+    if (notificarLaterais) {
+      try {
+        await fetch(`${API_BASE_URL}/api/lutas/${dadosLuta._id}/notificar-laterais`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            modalidade: dadosLuta.modalidade,
+            atleta_vermelho: dadosLuta.atleta_vermelho,
+            atleta_azul: dadosLuta.atleta_azul
+          })
+        });
+      } catch (err) {
+        console.error('❌ Erro ao notificar laterais:', err);
+      }
     }
   };
 
@@ -910,7 +967,7 @@ Deseja RECUPERAR esta sessão?
             )}
 
             <button 
-              onClick={() => { setQuadraAberta(true); puxarProximaLuta(); }}
+              onClick={abrirOuRetornarParaLuta}
               disabled={!todosProntos()}
               className="w-full py-4 rounded-xl font-black text-xl tracking-widest uppercase transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed bg-omega-red hover:bg-red-700 text-white"
             >
