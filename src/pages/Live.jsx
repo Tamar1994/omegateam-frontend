@@ -11,6 +11,10 @@ export function Live() {
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [poomsaeData, setPoomsaeData] = useState({}); // keyed by luta._id → {vermelho, azul}
   const wsLive = useRef(null);
+  // Refs para evitar re-runs desnecessários nos effects
+  const campeonatoCarregadoRef = useRef(false);
+  const reconnectTimerRef = useRef(null);
+  const poomsaeLutasRef = useRef([]);
 
   // Relógio no topo da tela
   useEffect(() => {
@@ -21,12 +25,13 @@ export function Live() {
   // Busca os dados do campeonato e a fila de lutas
   const carregarDados = async () => {
     try {
-      // Busca Nome do Campeonato
-      if (!campeonato) {
+      // Busca Nome do Campeonato apenas uma vez (usa ref para evitar loop)
+      if (!campeonatoCarregadoRef.current) {
+        campeonatoCarregadoRef.current = true;
         const campRes = await fetch(`${API_BASE_URL}/api/campeonatos/${id}`);
         setCampeonato(await campRes.json());
       }
-      
+
       // Busca a fila atualizada
       const lutasRes = await fetch(`${API_BASE_URL}/api/campeonatos/${id}/lutas`);
       setLutas(await lutasRes.json());
@@ -42,30 +47,36 @@ export function Live() {
     if (!id) return;
 
     const connectLiveWebSocket = () => {
+      // Limpa reconexão pendente antes de abrir nova conexão
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+
+      // Fecha conexão anterior se ainda aberta
+      if (wsLive.current && wsLive.current.readyState !== WebSocket.CLOSED) {
+        wsLive.current.onclose = null; // evita trigger de reconexão ao fechar manualmente
+        wsLive.current.close();
+      }
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
       const wsUrl = `${protocol}//${baseUrl.split('//')[1]}/api/ws/live/${id}`;
-      
-      console.log('📺 [Live] Conectando ao WebSocket:', wsUrl);
-      
+
       wsLive.current = new WebSocket(wsUrl);
-      
+
       wsLive.current.onopen = () => {
-        console.log('✅ [Live] WebSocket conectado');
+        // conexão estabelecida
       };
-      
+
       wsLive.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('📨 [Live] Atualização recebida:', data);
-          
+
           if (data.tipo === 'luta_atualizada') {
-            console.log(`📺 [Live] Luta ${data.luta_id} atualizada: ${data.status}`);
-            
-            // Atualizar a luta na lista
-            setLutas(prevLutas => 
-              prevLutas.map(luta => 
-                luta._id === data.luta_id 
+            setLutas(prevLutas =>
+              prevLutas.map(luta =>
+                luta._id === data.luta_id
                   ? {
                       ...luta,
                       status: data.status,
@@ -84,64 +95,72 @@ export function Live() {
           console.error('❌ [Live] Erro ao processar mensagem:', e);
         }
       };
-      
-      wsLive.current.onerror = (error) => {
-        console.error('❌ [Live] Erro WebSocket:', error);
-      };
-      
+
+      wsLive.current.onerror = () => { /* silencioso — onclose já trata */ };
+
       wsLive.current.onclose = () => {
-        console.log('❌ [Live] WebSocket desconectado, tentando reconectar em 5s...');
-        setTimeout(connectLiveWebSocket, 5000);
+        // Reconexão com backoff de 5s; timer salvo em ref para ser cancelável
+        reconnectTimerRef.current = setTimeout(connectLiveWebSocket, 5000);
       };
     };
-    
+
     connectLiveWebSocket();
-    
+
     // Carregamento inicial
     carregarDados();
-    
-    // Poll a cada 30 segundos como fallback (menos frequente agora)
-    const intervalo = setInterval(carregarDados, 30000); 
-    
+
+    // Poll a cada 30 segundos como fallback (WS cobre atualizações em tempo real)
+    const intervalo = setInterval(carregarDados, 30000);
+
     return () => {
       clearInterval(intervalo);
+      // Cancela reconexão pendente
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      // Fecha WS sem disparar nova reconexão
       if (wsLive.current) {
+        wsLive.current.onclose = null;
         wsLive.current.close();
       }
     };
-  }, [id, campeonato]);
+  }, [id]); // <-- removido `campeonato` da dependência; ref controla o fetch único
 
-  // ─── Poll poomsae match data for active Poomsae lutas ────────────
+  // ─── Poll poomsae match data apenas para lutas Poomsae em andamento ─
   useEffect(() => {
-    const poomsaeLutas = lutas.filter(l => l.status === 'Em Andamento' && l.modalidade === 'Poomsae');
-    if (poomsaeLutas.length === 0) return;
+    // Atualiza ref com lutas poomsae atuais (sem disparar o efeito a cada mudança)
+    poomsaeLutasRef.current = lutas.filter(l => l.status === 'Em Andamento' && l.modalidade === 'Poomsae');
+  }, [lutas]);
 
+  useEffect(() => {
     const fetchPoomsae = async () => {
+      const poomsaeLutas = poomsaeLutasRef.current;
+      if (poomsaeLutas.length === 0) return;
+
       const updates = {};
-      for (const luta of poomsaeLutas) {
-        try {
-          const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${luta._id}`);
-          if (!resp.ok) continue;
-          const matches = await resp.json();
-          const vermelho = matches.find(m => m.atleta_id && luta.atleta_vermelho?.includes(m.atleta_id));
-          const azul = matches.find(m => m.atleta_id && luta.atleta_azul?.includes(m.atleta_id));
-          // fallback: by order (first = vermelho, second = azul)
-          const ordered = matches.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0));
-          updates[luta._id] = {
-            vermelho: vermelho || ordered[0] || null,
-            azul: azul || ordered[1] || null,
-          };
-        } catch (_) {}
-      }
+      // Busca em paralelo em vez de loop sequencial
+      await Promise.allSettled(
+        poomsaeLutas.map(async (luta) => {
+          try {
+            const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${luta._id}`);
+            if (!resp.ok) return;
+            const matches = await resp.json();
+            const ordered = matches.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0));
+            updates[luta._id] = {
+              vermelho: matches.find(m => m.atleta_id && luta.atleta_vermelho?.includes(m.atleta_id)) || ordered[0] || null,
+              azul: matches.find(m => m.atleta_id && luta.atleta_azul?.includes(m.atleta_id)) || ordered[1] || null,
+            };
+          } catch (_) {}
+        })
+      );
+
       if (Object.keys(updates).length > 0) {
         setPoomsaeData(prev => ({ ...prev, ...updates }));
       }
     };
 
-    fetchPoomsae();
-    const interval = setInterval(fetchPoomsae, 5000);
+    // Intervalo fixo de 10s; usa a ref para saber quais lutas buscar (sem recriar interval)
+    const interval = setInterval(fetchPoomsae, 10000);
     return () => clearInterval(interval);
-  }, [lutas]);
+  }, []); // <-- roda apenas uma vez; lutas atuais vêm do ref
 
   if (!campeonato) {
     return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white font-bold text-2xl">Carregando Painel Live...</div>;
