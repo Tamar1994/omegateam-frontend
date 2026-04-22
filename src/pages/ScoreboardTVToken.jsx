@@ -286,189 +286,277 @@ function ScoreboardKyorugui({ luta }) {
 // COMPONENTE: POOMSAE PROFISSIONAL PARA TV
 // ==========================================
 function ScoreboardPoomsae({ luta }) {
-  const [segundosRestantes, setSegundosRestantes] = React.useState(null);
-  const [emApresentacao, setEmApresentacao] = React.useState(false);
+  const [matches, setMatches] = React.useState([]);
+  const [timerSegundos, setTimerSegundos] = React.useState(null);
+  const timerIntervalRef = React.useRef(null);
+  const activeMatchIdRef = React.useRef(null);
 
-  // Inicializar timer quando status muda para "apresentando"
-  React.useEffect(() => {
-    if (luta?.status?.toLowerCase().includes('apresent')) {
-      setEmApresentacao(true);
-      setSegundosRestantes(90); // Time limit para Poomsae (90 segundos)
-    } else {
-      setEmApresentacao(false);
-      setSegundosRestantes(null);
-    }
-  }, [luta?.status, luta?.id]);
-
-  // Countdown timer
-  React.useEffect(() => {
-    if (!emApresentacao || !luta?.id) return;
-
-    const intervalo = setInterval(() => {
-      setSegundosRestantes(prev => {
-        if (prev === null || prev <= 0) return 0;
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(intervalo);
-  }, [emApresentacao, luta?.id]);
-
-  const extrairPais = (nome) => {
-    const match = nome?.match(/\(([^)]+)\)$/);
-    return match ? match[1] : '';
-  };
-
-  const pais_vermelho = extrairPais(luta.atleta_vermelho);
-  const pais_azul = extrairPais(luta.atleta_azul);
+  const lutaId = luta._id || luta.id;
   const nome_vermelho = luta.atleta_vermelho?.split(' (')[0] || 'ATLETA';
   const nome_azul = luta.atleta_azul?.split(' (')[0] || 'ATLETA';
+  const equipe_vermelho = luta.atleta_vermelho?.match(/\(([^)]+)\)$/)?.[1] || '';
+  const equipe_azul = luta.atleta_azul?.match(/\(([^)]+)\)$/)?.[1] || '';
 
-  // Formatador de tempo MM:SS
-  const formatarTempo = (segundos) => {
-    if (segundos === null) return '--:--';
-    const mins = Math.floor(segundos / 60);
-    const segs = segundos % 60;
-    return `${mins.toString().padStart(2, '0')}:${segs.toString().padStart(2, '0')}`;
+  // Poll poomsae matches every 3 seconds
+  React.useEffect(() => {
+    if (!lutaId) return;
+    const buscar = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${lutaId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setMatches(data.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0)));
+      } catch {}
+    };
+    buscar();
+    const iv = setInterval(buscar, 3000);
+    return () => clearInterval(iv);
+  }, [lutaId]);
+
+  const matchVermelho = matches[0] || null;
+  const matchAzul = matches[1] || null;
+
+  const STATUSES_FIM = ['Aguardando Scores', 'Calculado', 'Concluído'];
+  const vermelhoAtivo = matchVermelho?.status === 'Em Andamento';
+  const azulAtivo = matchAzul?.status === 'Em Andamento';
+  const vermelhoFinalizado = STATUSES_FIM.includes(matchVermelho?.status);
+  const azulFinalizado = STATUSES_FIM.includes(matchAzul?.status);
+
+  // Gerenciar timer local — reinicia quando um novo match vai a Em Andamento
+  React.useEffect(() => {
+    const matchAtivo = vermelhoAtivo ? matchVermelho : azulAtivo ? matchAzul : null;
+    if (!matchAtivo) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+      setTimerSegundos(null);
+      activeMatchIdRef.current = null;
+      return;
+    }
+    if (matchAtivo._id === activeMatchIdRef.current) return;
+    activeMatchIdRef.current = matchAtivo._id;
+    const limite = matchAtivo.tipo === 'Freestyle' ? 100 : 90;
+    setTimerSegundos(limite);
+    clearInterval(timerIntervalRef.current);
+    timerIntervalRef.current = setInterval(() => {
+      setTimerSegundos(prev => (prev !== null && prev > 0) ? prev - 1 : 0);
+    }, 1000);
+  }, [vermelhoAtivo, azulAtivo, matchVermelho?._id, matchAzul?._id]);
+
+  React.useEffect(() => () => clearInterval(timerIntervalRef.current), []);
+
+  const formatarTempo = (s) => {
+    if (s === null) return '--:--';
+    return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
   };
 
-  return (
-    <div className="min-h-screen bg-black text-white flex overflow-hidden">
-      
-      {/* ===== LADO ESQUERDO - CHONG (VERMELHO) ===== */}
-      <div className="flex-1 bg-gradient-to-br from-red-950 to-red-900 border-r-8 border-yellow-400 flex flex-col justify-between p-8">
-        
-        {/* País */}
+  const timerStr = formatarTempo(timerSegundos);
+  const timerCritico = timerSegundos !== null && timerSegundos <= 15;
+
+  // Fase atual
+  let fase;
+  if (vermelhoFinalizado && azulFinalizado) fase = 'resultado';
+  else if (azulAtivo) fase = 'azul_apresentando';
+  else if (vermelhoAtivo) fase = 'vermelho_apresentando';
+  else if (vermelhoFinalizado) fase = 'aguardando_azul';
+  else fase = 'espera';
+
+  // ── TELA VERMELHA: CHONG apresentando ──────────────────────────────
+  if (fase === 'vermelho_apresentando') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-900 via-red-800 to-red-950 text-white flex flex-col items-center justify-between p-16 select-none">
+        <div className="w-full flex justify-between items-center">
+          <div className="bg-black/40 px-6 py-3 rounded-full border-2 border-red-500">
+            <p className="text-red-300 text-2xl font-black tracking-widest">🔴 CHONG</p>
+          </div>
+          <p className="text-red-200 text-xl font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-12 opacity-50" />
+        </div>
+
+        <div className="bg-black/50 border-4 border-red-400 rounded-3xl px-16 py-6 text-center">
+          <p className="text-red-300 text-sm font-black tracking-widest mb-2 uppercase">Poomsae em Execução</p>
+          <p className="text-white text-7xl font-black">{matchVermelho?.forma_designada || luta.poomsae_1 || '---'}</p>
+        </div>
+
         <div className="text-center">
-          <p className="text-red-300 text-5xl font-black tracking-widest mb-2">{pais_vermelho || 'MAR'}</p>
-          <p className="text-red-300 text-2xl font-black">🔴 CHONG</p>
+          <h1 className="text-[8rem] font-black text-white leading-none"
+              style={{textShadow:'0 0 60px rgba(255,100,100,0.8)'}}>
+            {nome_vermelho}
+          </h1>
+          {equipe_vermelho && <p className="text-red-300 text-3xl font-bold mt-4">{equipe_vermelho}</p>}
         </div>
 
-        {/* Nome */}
-        <h1 className="text-center text-5xl font-black text-white leading-tight line-clamp-2">
-          {nome_vermelho}
-        </h1>
-
-        {/* 3 BOXES: ACCURACY | PRESENTATION | TOTAL */}
-        <div className="grid grid-cols-3 gap-3 my-6">
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-red-600/50 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">ACCURACY</p>
-            <p className="text-red-400 text-3xl font-black">4.00</p>
-          </div>
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-red-600/50 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">PRESENTATION</p>
-            <p className="text-yellow-400 text-3xl font-black">6.00</p>
-          </div>
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-omega-red/60 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">TOTAL</p>
-            <p className="text-white text-3xl font-black">10.0</p>
-          </div>
-        </div>
-
-        {/* Nota Gigante Destaque */}
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-9xl font-black text-red-400" style={{textShadow: '0 0 30px rgba(220, 38, 38, 1)'}}>
-            {luta.nota_red?.toFixed(2) || '0.00'}
+        <div className="flex flex-col items-center">
+          <p className="text-red-300 text-xl font-black tracking-widest mb-4">⏱ TEMPO</p>
+          <p className={`text-[10rem] font-black tabular-nums leading-none ${timerCritico ? 'text-yellow-300 animate-pulse' : 'text-white'}`}
+             style={{textShadow: timerCritico ? '0 0 40px rgba(250,204,21,0.8)' : '0 0 30px rgba(255,255,255,0.3)'}}>
+            {timerStr}
           </p>
-        </div>
-
-        {/* Poomsaes apresentadas */}
-        <div className="text-center bg-red-900/60 rounded-xl p-4 border-3 border-red-600">
-          <p className="text-red-200 text-xs font-black mb-2">POOMSAES</p>
-          <p className="text-red-300 font-black text-lg">{luta.poomsae_1 || '---'}</p>
-          {luta.poomsae_2 && <p className="text-red-300 font-bold text-sm">+ {luta.poomsae_2}</p>}
         </div>
       </div>
+    );
+  }
 
-      {/* ===== CENTRO - INFO CENTRAL ===== */}
-      <div className="w-full max-w-xs bg-gradient-to-b from-black via-gray-900 to-black border-x-8 border-yellow-400 flex flex-col items-center justify-between gap-6 p-8">
-        
-        {/* GRANDE DESTAQUE - Qual Poomsae? */}
-        {luta.poomsae_1 && (
-          <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-600 rounded-3xl p-8 w-full text-center shadow-2xl border-4 border-yellow-300">
-            <p className="text-black text-xs font-black mb-3 tracking-widest">🎯 POOMSAE SENDO EXECUTADO</p>
-            <p className="text-4xl font-black text-white mb-2 drop-shadow-lg">{luta.poomsae_1}</p>
-            {luta.poomsae_2 && (
-              <p className="text-lg text-black font-bold drop-shadow">OU</p>
-            )}
-            {luta.poomsae_2 && (
-              <p className="text-3xl font-black text-white mt-1 drop-shadow-lg">{luta.poomsae_2}</p>
-            )}
+  // ── TELA AZUL: HONG apresentando ───────────────────────────────────
+  if (fase === 'azul_apresentando') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-blue-950 text-white flex flex-col items-center justify-between p-16 select-none">
+        <div className="w-full flex justify-between items-center">
+          <div className="bg-black/40 px-6 py-3 rounded-full border-2 border-blue-500">
+            <p className="text-blue-300 text-2xl font-black tracking-widest">🔵 HONG</p>
           </div>
-        )}
-        
-        {/* Status */}
-        <div className="text-center">
-          <p className="text-yellow-400 text-3xl font-black mb-3">POOMSAE</p>
-          <p className="text-gray-300 text-2xl font-black uppercase tracking-widest">
-            {luta.status || 'Aguardando'}
-          </p>
+          <p className="text-blue-200 text-xl font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-12 opacity-50" />
         </div>
 
-        {/* ⏱️ TIME LIMIT - Mostrar apenas durante apresentação */}
-        {emApresentacao && (
-          <div className="bg-gradient-to-r from-red-700 to-red-900 rounded-3xl p-8 w-full text-center shadow-2xl border-4 border-red-400">
-            <p className="text-yellow-300 text-xs font-black mb-2 tracking-widest">⏱️ TEMPO LIMITE</p>
-            <p className={`text-8xl font-black tabular-nums tracking-widest drop-shadow-lg ${
-              segundosRestantes <= 10 ? 'text-yellow-300 animate-pulse' : 'text-white'
-            }`}>
-              {formatarTempo(segundosRestantes)}
+        <div className="bg-black/50 border-4 border-blue-400 rounded-3xl px-16 py-6 text-center">
+          <p className="text-blue-300 text-sm font-black tracking-widest mb-2 uppercase">Poomsae em Execução</p>
+          <p className="text-white text-7xl font-black">{matchAzul?.forma_designada || luta.poomsae_1 || '---'}</p>
+        </div>
+
+        <div className="text-center">
+          <h1 className="text-[8rem] font-black text-white leading-none"
+              style={{textShadow:'0 0 60px rgba(100,150,255,0.8)'}}>
+            {nome_azul}
+          </h1>
+          {equipe_azul && <p className="text-blue-300 text-3xl font-bold mt-4">{equipe_azul}</p>}
+        </div>
+
+        <div className="flex flex-col items-center">
+          <p className="text-blue-300 text-xl font-black tracking-widest mb-4">⏱ TEMPO</p>
+          <p className={`text-[10rem] font-black tabular-nums leading-none ${timerCritico ? 'text-yellow-300 animate-pulse' : 'text-white'}`}
+             style={{textShadow: timerCritico ? '0 0 40px rgba(250,204,21,0.8)' : '0 0 30px rgba(255,255,255,0.3)'}}>
+            {timerStr}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── TELA RESULTADO: ambos finalizaram ──────────────────────────────
+  if (fase === 'resultado') {
+    const totalVerm = matchVermelho?.resultado?.pontuacao_final;
+    const totalAzul = matchAzul?.resultado?.pontuacao_final;
+    const vencedor = totalVerm != null && totalAzul != null
+      ? (totalVerm > totalAzul ? 'vermelho' : totalAzul > totalVerm ? 'azul' : 'empate')
+      : null;
+
+    const BoxScore = ({ resultado, cor }) => {
+      if (!resultado) return null;
+      const corText = cor === 'vermelho' ? 'text-red-300' : 'text-blue-300';
+      return (
+        <div className="flex gap-4 justify-center flex-wrap">
+          {resultado.detalhe_acuracia && (
+            <div className="bg-black/40 rounded-xl px-6 py-3 text-center">
+              <p className={`${corText} text-xs font-black mb-1`}>ACCURACY</p>
+              <p className="text-white text-2xl font-black">{resultado.detalhe_acuracia.media?.toFixed(3)}</p>
+            </div>
+          )}
+          {resultado.detalhe_habilidade_tecnica && (
+            <div className="bg-black/40 rounded-xl px-6 py-3 text-center">
+              <p className={`${corText} text-xs font-black mb-1`}>TÉCNICA</p>
+              <p className="text-white text-2xl font-black">{resultado.detalhe_habilidade_tecnica.media?.toFixed(3)}</p>
+            </div>
+          )}
+          {resultado.detalhe_apresentacao && (
+            <div className="bg-black/40 rounded-xl px-6 py-3 text-center">
+              <p className={`${corText} text-xs font-black mb-1`}>PRESENTATION</p>
+              <p className="text-white text-2xl font-black">{resultado.detalhe_apresentacao.media?.toFixed(3)}</p>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col select-none">
+        <div className="bg-gray-900 py-4 px-8 flex justify-between items-center border-b-4 border-yellow-400">
+          <p className="text-yellow-400 text-2xl font-black tracking-widest">🏆 RESULTADO FINAL</p>
+          <p className="text-gray-300 text-lg font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-10 opacity-60" />
+        </div>
+        <div className="flex-1 flex">
+          {/* Chong */}
+          <div className={`flex-1 flex flex-col items-center justify-center gap-8 p-12 ${vencedor === 'vermelho' ? 'bg-red-900' : 'bg-red-950/40'}`}>
+            {vencedor === 'vermelho' && (
+              <div className="bg-yellow-400 text-black text-2xl font-black px-8 py-3 rounded-full animate-pulse">🥇 VENCEDOR</div>
+            )}
+            <p className="text-red-300 text-2xl font-black">🔴 CHONG</p>
+            <h2 className="text-5xl font-black text-white text-center leading-tight">{nome_vermelho}</h2>
+            {equipe_vermelho && <p className="text-red-300 text-xl font-bold">{equipe_vermelho}</p>}
+            <p className={`font-black tabular-nums leading-none ${vencedor === 'vermelho' ? 'text-[11rem] text-yellow-400' : 'text-[9rem] text-red-400'}`}
+               style={{textShadow: vencedor === 'vermelho' ? '0 0 50px rgba(250,204,21,0.8)' : '0 0 30px rgba(220,38,38,0.5)'}}>
+              {totalVerm?.toFixed(3) ?? '--'}
             </p>
-            <p className="text-yellow-200 text-sm mt-2 font-black">90 segundos máximo</p>
+            <BoxScore resultado={matchVermelho?.resultado} cor="vermelho" />
           </div>
-        )}
 
-        {/* Categoria */}
-        <div className="text-center mt-auto">
-          <p className="text-gray-400 text-sm font-bold">{luta.nome_categoria || ''}</p>
+          <div className="w-2 bg-yellow-400" />
+
+          {/* Hong */}
+          <div className={`flex-1 flex flex-col items-center justify-center gap-8 p-12 ${vencedor === 'azul' ? 'bg-blue-900' : 'bg-blue-950/40'}`}>
+            {vencedor === 'azul' && (
+              <div className="bg-yellow-400 text-black text-2xl font-black px-8 py-3 rounded-full animate-pulse">🥇 VENCEDOR</div>
+            )}
+            <p className="text-blue-300 text-2xl font-black">🔵 HONG</p>
+            <h2 className="text-5xl font-black text-white text-center leading-tight">{nome_azul}</h2>
+            {equipe_azul && <p className="text-blue-300 text-xl font-bold">{equipe_azul}</p>}
+            <p className={`font-black tabular-nums leading-none ${vencedor === 'azul' ? 'text-[11rem] text-yellow-400' : 'text-[9rem] text-blue-400'}`}
+               style={{textShadow: vencedor === 'azul' ? '0 0 50px rgba(250,204,21,0.8)' : '0 0 30px rgba(37,99,235,0.5)'}}>
+              {totalAzul?.toFixed(3) ?? '--'}
+            </p>
+            <BoxScore resultado={matchAzul?.resultado} cor="azul" />
+          </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* Logo Omega */}
-        <img src={omegaLogo} alt="Omega" className="h-20 opacity-40" />
+  // ── TELA INICIAL / AGUARDANDO (espera ou entre apresentações) ───────
+  const chongJaApresentou = vermelhoFinalizado;
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white flex flex-col select-none">
+      <div className="bg-black py-5 px-8 flex justify-between items-center border-b-2 border-gray-800">
+        <img src={omegaLogo} alt="Logo" className="h-12 opacity-60" />
+        <div className="text-center">
+          <p className="text-white text-2xl font-black tracking-widest uppercase">Apresentação Poomsae</p>
+          <p className="text-gray-400 text-lg">{luta.nome_categoria}</p>
+        </div>
+        <div className="bg-gray-800 px-5 py-2 rounded-xl text-center">
+          <p className="text-gray-300 font-black text-sm">{luta.poomsae_1}{luta.poomsae_2 ? ` • ${luta.poomsae_2}` : ''}</p>
+        </div>
       </div>
 
-      {/* ===== LADO DIREITO - HONG (AZUL) ===== */}
-      <div className="flex-1 bg-gradient-to-br from-blue-950 to-blue-900 border-l-8 border-yellow-400 flex flex-col justify-between p-8">
-        
-        {/* País */}
-        <div className="text-center">
-          <p className="text-blue-300 text-5xl font-black tracking-widest mb-2">{pais_azul || 'KOR'}</p>
-          <p className="text-blue-300 text-2xl font-black">🔵 HONG</p>
+      <div className="flex-1 flex">
+        {/* Chong */}
+        <div className={`flex-1 flex flex-col items-center justify-center gap-8 p-16 border-r border-gray-800 ${chongJaApresentou ? 'bg-red-950/20' : 'bg-red-950/5'}`}>
+          <p className="text-red-400 text-2xl font-black">🔴 CHONG</p>
+          <h2 className="text-6xl font-black text-white text-center leading-tight">{nome_vermelho}</h2>
+          {equipe_vermelho && <p className="text-red-300 text-xl font-bold">{equipe_vermelho}</p>}
+          {chongJaApresentou && matchVermelho?.resultado ? (
+            <div className="text-center mt-6">
+              <p className="text-red-300 text-sm font-black mb-3 tracking-widest">NOTA PARCIAL</p>
+              <p className="text-7xl font-black text-red-400">{matchVermelho.resultado.pontuacao_final?.toFixed(3)}</p>
+              <p className="text-green-400 text-xl font-bold mt-3">✓ Apresentação concluída</p>
+            </div>
+          ) : (
+            <p className={`text-3xl font-black mt-6 ${!chongJaApresentou ? 'text-yellow-400 animate-pulse' : 'text-gray-600'}`}>
+              {!chongJaApresentou ? '▶ PRÓXIMO A APRESENTAR' : 'Aguardando...'}
+            </p>
+          )}
         </div>
 
-        {/* Nome */}
-        <h1 className="text-center text-5xl font-black text-white leading-tight line-clamp-2">
-          {nome_azul}
-        </h1>
+        <div className="w-px bg-gray-800" />
 
-        {/* 3 BOXES: ACCURACY | PRESENTATION | TOTAL */}
-        <div className="grid grid-cols-3 gap-3 my-6">
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-blue-600/50 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">ACCURACY</p>
-            <p className="text-blue-400 text-3xl font-black">4.00</p>
-          </div>
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-blue-600/50 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">PRESENTATION</p>
-            <p className="text-yellow-400 text-3xl font-black">6.00</p>
-          </div>
-          <div className="bg-black/60 rounded-lg p-3 border-2 border-omega-red/60 text-center">
-            <p className="text-gray-400 text-xs font-black mb-1">TOTAL</p>
-            <p className="text-white text-3xl font-black">10.0</p>
-          </div>
-        </div>
-
-        {/* Nota Gigante Destaque */}
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-9xl font-black text-blue-400" style={{textShadow: '0 0 30px rgba(37, 99, 235, 1)'}}>
-            {luta.nota_azul?.toFixed(2) || '0.00'}
-          </p>
-        </div>
-
-        {/* Poomsaes apresentadas */}
-        <div className="text-center bg-blue-900/60 rounded-xl p-4 border-3 border-blue-600">
-          <p className="text-blue-200 text-xs font-black mb-2">POOMSAES</p>
-          <p className="text-blue-300 font-black text-lg">{luta.poomsae_1 || '---'}</p>
-          {luta.poomsae_2 && <p className="text-blue-300 font-bold text-sm">+ {luta.poomsae_2}</p>}
+        {/* Hong */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-8 p-16 bg-blue-950/5">
+          <p className="text-blue-400 text-2xl font-black">🔵 HONG</p>
+          <h2 className="text-6xl font-black text-white text-center leading-tight">{nome_azul}</h2>
+          {equipe_azul && <p className="text-blue-300 text-xl font-bold">{equipe_azul}</p>}
+          {chongJaApresentou ? (
+            <p className="text-yellow-400 text-3xl font-black mt-6 animate-pulse">▶ PRÓXIMO A APRESENTAR</p>
+          ) : (
+            <p className="text-gray-600 text-2xl font-bold mt-6">Aguardando CHONG...</p>
+          )}
         </div>
       </div>
     </div>
