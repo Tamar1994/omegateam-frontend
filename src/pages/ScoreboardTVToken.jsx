@@ -95,7 +95,7 @@ export function ScoreboardTVToken() {
     };
 
     buscarDados();
-    const intervalo = setInterval(buscarDados, 5000); // 5s: TV display não precisa de 2s
+    const intervalo = setInterval(buscarDados, 2000); // 2s: atualiza turno_poomsae rapidamente
     return () => clearInterval(intervalo);
   }, [tokenValidado, token]);
 
@@ -309,22 +309,28 @@ function ScoreboardPoomsae({ luta }) {
       } catch {}
     };
     buscar();
-    const iv = setInterval(buscar, 3000); // 3s: precisa de resposta rápida ao iniciar apresentação
+    const iv = setInterval(buscar, 1500); // 1.5s: resposta rápida ao iniciar apresentação
     return () => clearInterval(iv);
   }, [lutaId]);
 
-  const matchVermelho = matches[0] || null;
-  const matchAzul = matches[1] || null;
-
   const STATUSES_FIM = ['Aguardando Scores', 'Calculado', 'Concluído'];
-  const vermelhoAtivo = matchVermelho?.status === 'Em Andamento';
-  const azulAtivo = matchAzul?.status === 'Em Andamento';
-  const vermelhoFinalizado = STATUSES_FIM.includes(matchVermelho?.status);
-  const azulFinalizado = STATUSES_FIM.includes(matchAzul?.status);
 
-  // Gerenciar timer local — reinicia quando um novo match vai a Em Andamento
+  // Use turno_poomsae from luta to know who is presenting (saved by MesarioPanel)
+  const turno = luta.turno_poomsae || 'chong_p1';
+  const isChong = !turno.startsWith('hong');
+
+  // Find the actively presenting match (Em Andamento) — robust against stale Agendado matches
+  const matchAtivo = matches.find(m => m.status === 'Em Andamento') || null;
+
+  // Finalized matches sorted by creation time (Chong first, Hong second)
+  const matchesFinalizados = matches
+    .filter(m => STATUSES_FIM.includes(m.status))
+    .sort((a, b) => new Date(a.timestamp_criacao || 0) - new Date(b.timestamp_criacao || 0));
+  const matchFinalVermelho = matchesFinalizados[0] || null;
+  const matchFinalAzul = matchesFinalizados[1] || null;
+
+  // Timer — reinicia quando um novo match vai a Em Andamento
   React.useEffect(() => {
-    const matchAtivo = vermelhoAtivo ? matchVermelho : azulAtivo ? matchAzul : null;
     if (!matchAtivo) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -334,13 +340,13 @@ function ScoreboardPoomsae({ luta }) {
     }
     if (matchAtivo._id === activeMatchIdRef.current) return;
     activeMatchIdRef.current = matchAtivo._id;
-    const limite = matchAtivo.tipo === 'Freestyle' ? 100 : 90;
+    const limite = matchAtivo.tipo_poomsae === 'Freestyle' ? 100 : 90;
     setTimerSegundos(limite);
     clearInterval(timerIntervalRef.current);
     timerIntervalRef.current = setInterval(() => {
       setTimerSegundos(prev => (prev !== null && prev > 0) ? prev - 1 : 0);
     }, 1000);
-  }, [vermelhoAtivo, azulAtivo, matchVermelho?._id, matchAzul?._id]);
+  }, [matchAtivo?._id]);
 
   React.useEffect(() => () => clearInterval(timerIntervalRef.current), []);
 
@@ -352,12 +358,12 @@ function ScoreboardPoomsae({ luta }) {
   const timerStr = formatarTempo(timerSegundos);
   const timerCritico = timerSegundos !== null && timerSegundos <= 15;
 
-  // Fase atual
+  // Fase atual — baseada em matchAtivo + turno_poomsae (robusto contra matches antigos)
   let fase;
-  if (vermelhoFinalizado && azulFinalizado) fase = 'resultado';
-  else if (azulAtivo) fase = 'azul_apresentando';
-  else if (vermelhoAtivo) fase = 'vermelho_apresentando';
-  else if (vermelhoFinalizado) fase = 'aguardando_azul';
+  if (!matchAtivo && matchesFinalizados.length >= 2) fase = 'resultado';
+  else if (matchAtivo && !isChong) fase = 'azul_apresentando';
+  else if (matchAtivo && isChong) fase = 'vermelho_apresentando';
+  else if (matchesFinalizados.length >= 1) fase = 'aguardando_azul';
   else fase = 'espera';
 
   // ── TELA VERMELHA: CHONG apresentando ──────────────────────────────
@@ -374,7 +380,7 @@ function ScoreboardPoomsae({ luta }) {
 
         <div className="bg-black/50 border-4 border-red-400 rounded-3xl px-16 py-6 text-center">
           <p className="text-red-300 text-sm font-black tracking-widest mb-2 uppercase">Poomsae em Execução</p>
-          <p className="text-white text-7xl font-black">{matchVermelho?.forma_designada || luta.poomsae_1 || '---'}</p>
+          <p className="text-white text-7xl font-black">{matchAtivo?.forma_designada || luta.poomsae_1 || '---'}</p>
         </div>
 
         <div className="text-center">
@@ -410,7 +416,7 @@ function ScoreboardPoomsae({ luta }) {
 
         <div className="bg-black/50 border-4 border-blue-400 rounded-3xl px-16 py-6 text-center">
           <p className="text-blue-300 text-sm font-black tracking-widest mb-2 uppercase">Poomsae em Execução</p>
-          <p className="text-white text-7xl font-black">{matchAzul?.forma_designada || luta.poomsae_1 || '---'}</p>
+          <p className="text-white text-7xl font-black">{matchAtivo?.forma_designada || luta.poomsae_1 || '---'}</p>
         </div>
 
         <div className="text-center">
@@ -434,8 +440,8 @@ function ScoreboardPoomsae({ luta }) {
 
   // ── TELA RESULTADO: ambos finalizaram ──────────────────────────────
   if (fase === 'resultado') {
-    const totalVerm = matchVermelho?.resultado?.pontuacao_final;
-    const totalAzul = matchAzul?.resultado?.pontuacao_final;
+    const totalVerm = matchFinalVermelho?.resultado?.pontuacao_final;
+    const totalAzul = matchFinalAzul?.resultado?.pontuacao_final;
     const vencedor = totalVerm != null && totalAzul != null
       ? (totalVerm > totalAzul ? 'vermelho' : totalAzul > totalVerm ? 'azul' : 'empate')
       : null;
@@ -487,7 +493,7 @@ function ScoreboardPoomsae({ luta }) {
                style={{textShadow: vencedor === 'vermelho' ? '0 0 50px rgba(250,204,21,0.8)' : '0 0 30px rgba(220,38,38,0.5)'}}>
               {totalVerm?.toFixed(3) ?? '--'}
             </p>
-            <BoxScore resultado={matchVermelho?.resultado} cor="vermelho" />
+            <BoxScore resultado={matchFinalVermelho?.resultado} cor="vermelho" />
           </div>
 
           <div className="w-2 bg-yellow-400" />
@@ -504,7 +510,7 @@ function ScoreboardPoomsae({ luta }) {
                style={{textShadow: vencedor === 'azul' ? '0 0 50px rgba(250,204,21,0.8)' : '0 0 30px rgba(37,99,235,0.5)'}}>
               {totalAzul?.toFixed(3) ?? '--'}
             </p>
-            <BoxScore resultado={matchAzul?.resultado} cor="azul" />
+            <BoxScore resultado={matchFinalAzul?.resultado} cor="azul" />
           </div>
         </div>
       </div>
@@ -512,7 +518,7 @@ function ScoreboardPoomsae({ luta }) {
   }
 
   // ── TELA INICIAL / AGUARDANDO (espera ou entre apresentações) ───────
-  const chongJaApresentou = vermelhoFinalizado;
+  const chongJaApresentou = matchesFinalizados.length >= 1;
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white flex flex-col select-none">
       <div className="bg-black py-5 px-8 flex justify-between items-center border-b-2 border-gray-800">
@@ -532,10 +538,10 @@ function ScoreboardPoomsae({ luta }) {
           <p className="text-red-400 text-2xl font-black">🔴 CHONG</p>
           <h2 className="text-6xl font-black text-white text-center leading-tight">{nome_vermelho}</h2>
           {equipe_vermelho && <p className="text-red-300 text-xl font-bold">{equipe_vermelho}</p>}
-          {chongJaApresentou && matchVermelho?.resultado ? (
+          {chongJaApresentou && matchFinalVermelho?.resultado ? (
             <div className="text-center mt-6">
               <p className="text-red-300 text-sm font-black mb-3 tracking-widest">NOTA PARCIAL</p>
-              <p className="text-7xl font-black text-red-400">{matchVermelho.resultado.pontuacao_final?.toFixed(3)}</p>
+              <p className="text-7xl font-black text-red-400">{matchFinalVermelho.resultado.pontuacao_final?.toFixed(3)}</p>
               <p className="text-green-400 text-xl font-bold mt-3">✓ Apresentação concluída</p>
             </div>
           ) : (
