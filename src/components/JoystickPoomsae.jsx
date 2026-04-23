@@ -111,6 +111,11 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
           setApresentacao('');
           setErro(null);
           setResultado(null);
+        } else if (data.tipo === 'poomsae_encerrado') {
+          // Apresentação terminou — limpar match ativo se não submeteu ainda
+          if (!submetido) {
+            setMatchAtivo(null);
+          }
         }
       } catch (_) { /* ignore parse errors */ }
     };

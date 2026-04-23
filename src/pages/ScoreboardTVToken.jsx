@@ -305,11 +305,11 @@ function ScoreboardPoomsae({ luta }) {
         const res = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${lutaId}`);
         if (!res.ok) return;
         const data = await res.json();
-        setMatches(data.sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0)));
+        setMatches(data.sort((a, b) => new Date(a.timestamp_criacao || a.criado_em || 0) - new Date(b.timestamp_criacao || b.criado_em || 0)));
       } catch {}
     };
     buscar();
-    const iv = setInterval(buscar, 6000); // 6s: resultado de poomsae não muda com frequência
+    const iv = setInterval(buscar, 3000); // 3s: precisa de resposta rápida ao iniciar apresentação
     return () => clearInterval(iv);
   }, [lutaId]);
 

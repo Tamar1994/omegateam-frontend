@@ -700,6 +700,8 @@ Deseja RECUPERAR esta sessão?
       ws.current.send(JSON.stringify({
         tipo: 'poomsae_match_iniciado',
         match_id: matchId,
+        campeonato_id: id,
+        luta_id: lutaAtual._id,
         tipo_poomsae: tipoPoomsae,
         atleta: atletaCor,
         forma: forma,
@@ -728,6 +730,14 @@ Deseja RECUPERAR esta sessão?
       applyDeducaoPoomsae('vermelho', 'tempo');
     }
     setPoomsaeFlow('coletando_vermelho');
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        tipo: 'poomsae_encerrado',
+        campeonato_id: id,
+        atleta: 'vermelho',
+        match_id: poomsaeMatchVermelho?.id,
+      }));
+    }
   };
 
   const iniciarApresentacaoAzul = async () => {
@@ -748,6 +758,14 @@ Deseja RECUPERAR esta sessão?
       applyDeducaoPoomsae('azul', 'tempo');
     }
     setPoomsaeFlow('coletando_azul');
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        tipo: 'poomsae_encerrado',
+        campeonato_id: id,
+        atleta: 'azul',
+        match_id: poomsaeMatchAzul?.id,
+      }));
+    }
   };
 
   const applyDeducaoPoomsae = async (cor, tipo) => {
