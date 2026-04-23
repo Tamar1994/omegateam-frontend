@@ -63,9 +63,10 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
 
         if (matches.length > 0) {
           const match = matches[0];
-          if (match.id !== lastMatchIdRef.current) {
+          const matchId = match._id || match.id;
+          if (matchId !== lastMatchIdRef.current) {
             // New match — reset form
-            lastMatchIdRef.current = match.id;
+            lastMatchIdRef.current = matchId;
             setMatchAtivo(match);
             setSubmetido(false);
             setApresentacaoEncerrada(false);
@@ -175,8 +176,9 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
     setEnviando(true);
     setErro(null);
     try {
+      const matchId = matchAtivo._id || matchAtivo.id;
       const payload = {
-        match_id: matchAtivo.id,
+        match_id: matchId,
         juiz_id: usuario.email,
         numero_juiz: numeroJuiz,
         ...(isFreestyle
@@ -184,7 +186,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
           : { score_recognized: { acuracia: acuraciaVal, apresentacao: apresentacaoTotal } }
         )
       };
-      const resp = await fetch(`${API_BASE}/api/poomsae/matches/${matchAtivo.id}/scores`, {
+      const resp = await fetch(`${API_BASE}/api/poomsae/matches/${matchId}/scores`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

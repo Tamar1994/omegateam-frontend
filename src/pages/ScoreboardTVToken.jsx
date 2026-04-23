@@ -358,13 +358,29 @@ function ScoreboardPoomsae({ luta }) {
   const timerStr = formatarTempo(timerSegundos);
   const timerCritico = timerSegundos !== null && timerSegundos <= 15;
 
-  // Fase atual — baseada em matchAtivo + turno_poomsae (robusto contra matches antigos)
+  // Fase atual:
+  // Prioridade 1: matchAtivo (match "Em Andamento" encontrado via poll)
+  // Prioridade 2: turno_poomsae (campo salvo no doc da luta ao iniciar apresentação)
+  //   → luta.turno_poomsae fica indefinido antes de qualquer apresentação
+  //   → é salvo como 'chong_p1' ou 'hong_p1' em ≤2s após "Iniciar Apresentação"
+  //   → garante transição imediata mesmo se o poll de matches ainda não retornou
+  const turnoSet = !!luta.turno_poomsae;
   let fase;
-  if (!matchAtivo && matchesFinalizados.length >= 2) fase = 'resultado';
-  else if (matchAtivo && !isChong) fase = 'azul_apresentando';
-  else if (matchAtivo && isChong) fase = 'vermelho_apresentando';
-  else if (matchesFinalizados.length >= 1) fase = 'aguardando_azul';
-  else fase = 'espera';
+  if (matchAtivo) {
+    // Match está "Em Andamento" — tela fullscreen do apresentador atual
+    fase = isChong ? 'vermelho_apresentando' : 'azul_apresentando';
+  } else if (matchesFinalizados.length >= 2) {
+    fase = 'resultado';
+  } else if (matchesFinalizados.length >= 1) {
+    // Chong finalizou; se turno já mudou para hong, mostrar Hong apresentando (poll pode estar atrasado)
+    fase = !isChong ? 'azul_apresentando' : 'aguardando_azul';
+  } else if (turnoSet) {
+    // turno_poomsae foi definido mas match ainda não foi encontrado no poll (< 1.5s de atraso)
+    // → mostrar tela fullscreen imediatamente com base no turno
+    fase = isChong ? 'vermelho_apresentando' : 'azul_apresentando';
+  } else {
+    fase = 'espera';
+  }
 
   // ── TELA VERMELHA: CHONG apresentando ──────────────────────────────
   if (fase === 'vermelho_apresentando') {
