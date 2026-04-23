@@ -13,7 +13,8 @@ export function AdminEvento({ evento, onVoltar }) {
   const [listaArbitros, setListaArbitros] = useState([]);
   const [equipesQuadras, setEquipesQuadras] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [cronogramaGerado, setCronogramaGerado] = useState(false);  // ✅ Novo estado
+  const [cronogramaGerado, setCronogramaGerado] = useState(false);
+  const [sorteioResultado, setSorteioResultado] = useState(null); // null = não sorteado ainda
   const [configCronograma, setConfigCronograma] = useState({
     num_quadras: 2,
     isolar_poomsae: true,
@@ -30,15 +31,40 @@ export function AdminEvento({ evento, onVoltar }) {
   const carregarDadosEvento = async () => {
     setLoading(true);
     try {
-      const [inscrResponse, arbResponse, quadResponse] = await Promise.all([
+      const [inscrResponse, arbResponse, quadResponse, lutasResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/api/campeonatos/${evento._id}/inscricoes`),
         fetch(`${API_BASE_URL}/api/usuarios/arbitros`),
-        fetch(`${API_BASE_URL}/api/campeonatos/${evento._id}/quadras`)
+        fetch(`${API_BASE_URL}/api/campeonatos/${evento._id}/quadras`),
+        fetch(`${API_BASE_URL}/api/campeonatos/${evento._id}/lutas`),
       ]);
 
       setInscricoesEvento(await inscrResponse.json());
       setListaArbitros(await arbResponse.json());
       setEquipesQuadras(await quadResponse.json());
+
+      if (lutasResponse.ok) {
+        const lutas = await lutasResponse.json();
+        if (lutas.length > 0) {
+          setCronogramaGerado(true);
+          // Verifica se poomsaes já foram sorteados
+          const poomsaeLutas = lutas.filter(l => l.modalidade === 'Poomsae' && l.poomsae_1);
+          if (poomsaeLutas.length > 0) {
+            const cats = {};
+            poomsaeLutas.forEach(l => {
+              if (!cats[l.categoria_id]) {
+                const cat = evento.categorias?.find(c => c.id === l.categoria_id);
+                const nomeDisplay = cat ? `${cat.idade_genero} ${cat.peso_ou_tipo}`.trim() : l.categoria_id;
+                cats[l.categoria_id] = {
+                  categoria: nomeDisplay,
+                  poomsae_1: l.poomsae_1,
+                  poomsae_2: l.poomsae_2 || null,
+                };
+              }
+            });
+            setSorteioResultado(Object.values(cats).sort((a, b) => a.categoria.localeCompare(b.categoria)));
+          }
+        }
+      }
     } catch (error) {
       console.error(t('erro_buscar_painel_evento'));
     } finally {
@@ -166,7 +192,7 @@ export function AdminEvento({ evento, onVoltar }) {
   };
 
   const handleSortearPoomsaes = async () => {
-    if (!window.confirm('Deseja sortear os Poomsaes para as categorias de Faixa Preta? Uma notícia será criada no mural.')) return;
+    if (!window.confirm('Deseja sortear os Poomsaes? Faixa Preta: 2 formas (WT). Colorida: forma da própria faixa. Uma notícia será criada no mural.')) return;
 
     setLoading(true);
     try {
@@ -176,22 +202,9 @@ export function AdminEvento({ evento, onVoltar }) {
       );
 
       if (res.ok) {
-        // Criar notícia no mural
-        const noticia = {
-          campeonato_id: evento._id,
-          titulo: `🎲 Poomsaes Sorteados - ${evento.nome}`,
-          conteudo: `Os Poomsaes oficiais foram sorteados para a competição! Consulte o scoreboard para ver os poomsaes de sua categoria.`,
-          tipo: 'sortear_poomsae',
-          data_criacao: new Date().toISOString()
-        };
-
-        await fetch(`${API_BASE_URL}/api/noticias`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(noticia)
-        });
-
-        alert('✅ Poomsaes sorteados com sucesso! Notícia criada no mural.');
+        const data = await res.json();
+        setSorteioResultado(data.categorias || []);
+        alert(`✅ ${data.mensagem} Notícia criada no mural.`);
         await carregarDadosEvento();
       } else {
         alert('Erro ao sortear poomsaes.');
@@ -489,14 +502,45 @@ export function AdminEvento({ evento, onVoltar }) {
 
         {/* Sortear Poomsaes - Aparece apenas após cronograma */}
         {cronogramaGerado && (
-          <div className="w-full flex gap-4">
-            <button
-              onClick={handleSortearPoomsaes}
-              disabled={loading}
-              className="flex-1 px-8 py-4 bg-gradient-to-r from-purple-600 to-purple-800 text-white font-black rounded-lg hover:shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm uppercase tracking-wider"
-            >
-              {loading ? '⏳ Sorteando Poomsaes...' : '✨ Sortear Poomsaes (Faixa Preta)'}
-            </button>
+          <div className="w-full flex flex-col gap-4">
+            <div className="flex gap-4">
+              <button
+                onClick={handleSortearPoomsaes}
+                disabled={loading}
+                className="flex-1 px-8 py-4 bg-gradient-to-r from-purple-600 to-purple-800 text-white font-black rounded-lg hover:shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm uppercase tracking-wider"
+              >
+                {loading ? '⏳ Sorteando Poomsaes...' : sorteioResultado ? '🔄 Re-Sortear Poomsaes' : '✨ Sortear Poomsaes'}
+              </button>
+            </div>
+
+            {/* Painel de resultados do sorteio */}
+            {sorteioResultado && sorteioResultado.length > 0 && (
+              <div className="bg-purple-50 border-2 border-purple-300 rounded-xl p-4">
+                <p className="text-purple-800 font-black text-sm uppercase tracking-wider mb-3">
+                  🎲 Poomsaes Sorteados — {sorteioResultado.length} categorias
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {sorteioResultado.map((cat, idx) => (
+                    <div key={idx} className={`rounded-lg px-4 py-3 border-l-4 ${
+                      cat.tipo === 'Freestyle'
+                        ? 'bg-yellow-50 border-yellow-400'
+                        : cat.tipo === 'Colorida'
+                        ? 'bg-blue-50 border-blue-400'
+                        : 'bg-purple-50 border-purple-500'
+                    }`}>
+                      <p className="text-xs font-black uppercase tracking-wide text-gray-500 mb-1">
+                        {cat.tipo === 'Freestyle' ? '⭐ Freestyle' : cat.tipo === 'Colorida' ? '🟡 Colorida' : '🖤 Preta'}
+                      </p>
+                      <p className="text-sm font-bold text-gray-800 leading-tight">{cat.categoria}</p>
+                      <p className="text-purple-700 font-black text-sm mt-1">{cat.poomsae_1}</p>
+                      {cat.poomsae_2 && (
+                        <p className="text-purple-500 font-bold text-xs">2ª: {cat.poomsae_2}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
