@@ -8,6 +8,7 @@ export function ScoreboardTV() {
   
   const [lutaAtual, setLutaAtual] = useState(null);
   const [tempoLuta, setTempoLuta] = useState("00:00");
+  const [poomsaeMatchAtivo, setPoomsaeMatchAtivo] = useState(null); // match Em Andamento (real-time sync)
   
   // ==========================================
   // ESTADOS DE ANIMAÇÃO PARA POOMSAE
@@ -48,6 +49,28 @@ export function ScoreboardTV() {
     const intervalo = setInterval(buscarDados, 5000); // 5s: TV display não precisa de 2s
     return () => clearInterval(intervalo);
   }, [id, quadra, faseAnimacao]);
+
+  // ==========================================
+  // POLLING: MATCH POOMSAE ATIVO (QUEM ESTÁ APRESENTANDO)
+  // ==========================================
+  useEffect(() => {
+    if (!lutaAtual?._id || lutaAtual?.modalidade !== 'Poomsae') {
+      setPoomsaeMatchAtivo(null);
+      return;
+    }
+    const buscarMatch = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/poomsae/matches?luta_id=${lutaAtual._id}&status=Em%20Andamento`);
+        if (res.ok) {
+          const matches = await res.json();
+          setPoomsaeMatchAtivo(matches.length > 0 ? matches[0] : null);
+        }
+      } catch (_) {}
+    };
+    buscarMatch();
+    const intervalo = setInterval(buscarMatch, 3000);
+    return () => clearInterval(intervalo);
+  }, [lutaAtual?._id, lutaAtual?.modalidade]);
 
   // ==========================================
   // MÁQUINA DE ANIMAÇÃO DO POOMSAE
@@ -106,24 +129,42 @@ export function ScoreboardTV() {
   // RENDERIZAÇÃO: POOMSAE
   // ==========================================
   if (lutaAtual.modalidade === 'Poomsae') {
-    // Determina quem está no tatame usando o novo campo turno_poomsae
-    const turno = lutaAtual.turno_poomsae || 'chong_p1'; // Default para primeira apresentação
-    const isChong = turno?.startsWith('chong');
-    const isHong = turno?.startsWith('hong');
-    const isPrimeiroP = turno?.includes('p1');
-    
-    const atletaAtivo = isChong ? lutaAtual.atleta_vermelho : isHong ? lutaAtual.atleta_azul : lutaAtual.atleta;
-    const nomeAtleta = atletaAtivo?.split(' (')[0];
+    // Use turno_poomsae to determine who's up (saved by MesarioPanel via salvarTurnoPoomsae)
+    const turno = lutaAtual.turno_poomsae || 'chong_p1';
+    const isChong = !turno?.startsWith('hong');
+    const atletaAtivo = isChong ? lutaAtual.atleta_vermelho : lutaAtual.atleta_azul;
+    const nomeAtleta = atletaAtivo?.split(' (')[0] || '—';
     const equipeAtleta = atletaAtivo?.includes('(') ? atletaAtivo.split('(')[1].replace(')', '') : '';
-    
-    // Determina qual Poomsae está sendo executado
-    const poomsaeNome = isPrimeiroP ? lutaAtual.poomsae_1 : lutaAtual.poomsae_2;
-    const rodadaInfo = isPrimeiroP ? '1ª Rodada' : '2ª Rodada';
+    const poomsaeNome = lutaAtual.poomsae_1;
+    const corBg = isChong ? 'from-red-950 via-gray-950 to-black' : 'from-blue-950 via-gray-950 to-black';
+    const corBorda = isChong ? 'border-red-600' : 'border-blue-600';
+    const corTexto = isChong ? 'text-red-400' : 'text-blue-400';
+    const corLabel = isChong ? '🔴 CHONG' : '🔵 HONG';
 
+    // When no active match, show waiting/standby
+    if (!poomsaeMatchAtivo) {
+      return (
+        <div className="min-h-screen bg-gray-950 text-white flex flex-col items-center justify-center font-sans">
+          <div className="bg-gray-900 py-4 px-8 border-b-4 border-gray-800 flex justify-between items-center w-full absolute top-0">
+            <img src={omegaLogo} alt="Logo" className="h-16" />
+            <div className="text-center">
+              <h1 className="text-3xl font-black text-gray-300 uppercase tracking-widest">Poomsae</h1>
+              <p className="text-gray-400 text-lg mt-1">{lutaAtual.nome_categoria}</p>
+            </div>
+            <div className="bg-gray-800 px-6 py-2 rounded-xl border border-gray-700">
+              <span className="text-2xl font-black text-gray-400">Q{quadra}</span>
+            </div>
+          </div>
+          <p className="text-5xl font-black text-gray-600 uppercase tracking-widest animate-pulse mt-20">Aguardando Apresentação...</p>
+        </div>
+      );
+    }
+
+    // Fullscreen: who is presenting right now
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col font-sans overflow-hidden">
+      <div className={`min-h-screen bg-gradient-to-b ${corBg} text-white flex flex-col font-sans overflow-hidden`}>
         {/* HEADER */}
-        <div className="bg-gray-900 py-4 px-8 border-b-4 border-gray-800 flex justify-between items-center">
+        <div className="bg-black/60 py-4 px-8 border-b-4 border-gray-800 flex justify-between items-center">
           <img src={omegaLogo} alt="Logo" className="h-16" />
           <div className="text-center">
             <h1 className="text-3xl font-black text-gray-300 uppercase tracking-widest">Apresentação Poomsae</h1>
@@ -136,65 +177,28 @@ export function ScoreboardTV() {
 
         {/* CONTEÚDO CENTRAL */}
         <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
-          
-          {/* Alerta do Poomsae a ser executado */}
-          <div className="absolute top-10 bg-blue-900 bg-opacity-30 border-2 border-blue-500 px-12 py-4 rounded-full shadow-[0_0_30px_rgba(59,130,246,0.3)] animate-pulse">
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-2xl font-bold text-blue-300 uppercase tracking-widest">{rodadaInfo}</span>
-              <span className="text-3xl font-black text-blue-400 tracking-widest">{poomsaeNome || 'Aguardando Sorteio...'}</span>
-            </div>
+
+          {/* Athlete label badge */}
+          <div className={`mb-6 px-10 py-3 rounded-full border-2 ${corBorda} bg-black/40`}>
+            <span className={`text-2xl font-black tracking-widest uppercase ${corTexto}`}>{corLabel}</span>
           </div>
 
-          <h2 className="text-7xl font-black text-white mb-4 mt-20 text-center">{nomeAtleta}</h2>
-          {equipeAtleta && <p className="text-3xl font-bold text-gray-400 bg-gray-900 px-8 py-2 rounded-full mb-12">{equipeAtleta}</p>}
+          {/* Athlete name */}
+          <h2 className="text-8xl font-black text-white mb-4 text-center drop-shadow-lg">{nomeAtleta}</h2>
+          {equipeAtleta && (
+            <p className="text-3xl font-bold text-gray-400 bg-black/40 px-8 py-2 rounded-full mb-10">{equipeAtleta}</p>
+          )}
 
-          {/* ÁREA DAS NOTAS E ANIMAÇÃO */}
-          <div className="w-full max-w-6xl h-64 flex items-center justify-center bg-gray-900 rounded-3xl border-4 border-gray-800 relative overflow-hidden">
-            
-            {faseAnimacao === 'espera' && (
-              <p className="text-4xl font-bold text-gray-600 uppercase tracking-widest animate-pulse">Apresentação em Andamento...</p>
-            )}
+          {/* Poomsae form box */}
+          <div className={`border-2 ${corBorda} bg-black/50 rounded-3xl px-16 py-6 text-center shadow-2xl`}>
+            <p className="text-lg text-gray-400 uppercase tracking-widest mb-1">Poomsae</p>
+            <p className={`text-5xl font-black tracking-widest ${corTexto}`}>{poomsaeNome || 'Forma a Definir'}</p>
+          </div>
 
-            {faseAnimacao === 'base' && (
-              <div className="flex gap-16 animate-fade-in-up">
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-400 uppercase tracking-widest mb-2">Precisão</p>
-                  <p className="text-8xl font-black text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)]">4.0</p>
-                </div>
-                <div className="w-2 bg-gray-800 rounded-full"></div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-400 uppercase tracking-widest mb-2">Apresentação</p>
-                  <p className="text-8xl font-black text-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.8)]">6.0</p>
-                </div>
-              </div>
-            )}
-
-            {(faseAnimacao === 'juizes' || faseAnimacao === 'resultado') && (
-              <div className="flex flex-col items-center w-full animate-fade-in-up">
-                {/* Notas dos 5 Juízes */}
-                <div className="flex gap-6 mb-8">
-                  {notasSimuladas.map(nota => (
-                    <div key={nota.id} className="relative">
-                      <div className={`bg-gray-800 border-4 px-6 py-4 rounded-2xl ${nota.cortada ? 'border-red-900 opacity-50' : 'border-gray-600'}`}>
-                        <p className={`text-5xl font-black ${nota.cortada ? 'text-gray-500' : 'text-white'}`}>{nota.val}</p>
-                      </div>
-                      {/* Risco Vermelho nas notas cortadas */}
-                      {nota.cortada && <div className="absolute top-1/2 left-[-10%] w-[120%] h-2 bg-red-600 rotate-12 shadow-[0_0_15px_rgba(220,38,38,0.8)]"></div>}
-                    </div>
-                  ))}
-                </div>
-                
-                {/* NOTA FINAL APARECE GIGANTE */}
-                {faseAnimacao === 'resultado' && (
-                  <div className="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center animate-zoom-in">
-                    <p className="text-2xl font-bold text-gray-400 uppercase tracking-widest mb-2">Nota Final</p>
-                    <p className="text-[10rem] leading-none font-black text-green-400 drop-shadow-[0_0_40px_rgba(74,222,128,0.6)]">
-                      {notaFinalPoomsae}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Live indicator */}
+          <div className="mt-10 flex items-center gap-3 bg-black/40 px-6 py-3 rounded-full border border-gray-700">
+            <span className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></span>
+            <span className="text-gray-300 font-bold tracking-widest text-sm uppercase">Apresentando ao Vivo</span>
           </div>
         </div>
       </div>

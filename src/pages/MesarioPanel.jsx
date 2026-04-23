@@ -51,6 +51,7 @@ export function MesarioPanel() {
   // poomsaeFlow: aguardando | apresentando_vermelho | coletando_vermelho |
   //              apresentando_azul | coletando_azul | resultado | encerrada
   const [poomsaeFlow, setPoomsaeFlow] = useState('aguardando');
+  const poomsaeFlowRef = useRef('aguardando'); // keep ref in sync for WS handlers (avoids stale closure)
   const [poomsaeMatchVermelho, setPoomsaeMatchVermelho] = useState(null); // {id, resultado}
   const [poomsaeMatchAzul, setPoomsaeMatchAzul] = useState(null);
   const [poomsaeScoresVermelho, setPoomsaeScoresVermelho] = useState({ recebidos: [], pendentes: [] });
@@ -273,21 +274,19 @@ Deseja RECUPERAR esta sessão?
             // ✅ RESULTADO FINAL com notas dos juízes
             if (data.tipo === 'poomsae_resultado_final') {
               console.log('✅ [Poomsae] RESULTADO FINAL recebido!', data.resultado_final);
-              
-              const notas = data.resultado_final?.notas || {};
-              setPlacar({
-                round: 1,
-                chongP1: notas.vermelho?.p1 || notas.vermelho || 0,
-                hongP1: notas.azul?.p1 || notas.azul || 0,
-                chongP2: notas.vermelho?.p2 || 0,
-                hongP2: notas.azul?.p2 || 0
-              });
-              
-              setStatusLuta('encerrada');
-              const vencedorDeterminado = data.resultado_final?.vencedor === 'vermelho' ? 'red' : 'blue';
-              setVencedor(vencedorDeterminado);
-              
-              // Vibração para alertar do resultado
+              const resultado = data.resultado_final;
+              const currentFlow = poomsaeFlowRef.current;
+
+              if (currentFlow === 'coletando_vermelho') {
+                // Chong's match done → advance to Hong's turn
+                setPoomsaeMatchVermelho(prev => ({ ...prev, resultado }));
+                setPoomsaeFlow('apresentando_azul');
+              } else if (currentFlow === 'coletando_azul') {
+                // Hong's match done → show final result
+                setPoomsaeMatchAzul(prev => ({ ...prev, resultado }));
+                setPoomsaeFlow('resultado');
+              }
+
               if (navigator.vibrate) {
                 navigator.vibrate([200, 100, 200]);
               }
@@ -718,6 +717,7 @@ Deseja RECUPERAR esta sessão?
       setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setPoomsaeFlow('apresentando_vermelho');
       resetarRelogio(getTempoLimitePoomsae());
+      salvarTurnoPoomsae('chong_p1').catch(() => {});
     } catch (err) {
       alert('Erro ao iniciar apresentação: ' + err.message);
     }
@@ -747,6 +747,7 @@ Deseja RECUPERAR esta sessão?
       setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setPoomsaeFlow('apresentando_azul');
       resetarRelogio(getTempoLimitePoomsae());
+      salvarTurnoPoomsae('hong_p1').catch(() => {});
     } catch (err) {
       alert('Erro ao iniciar apresentação: ' + err.message);
     }
@@ -803,6 +804,11 @@ Deseja RECUPERAR esta sessão?
     declararVencedor(finalV >= finalA ? 'red' : 'blue');
     setPoomsaeFlow('encerrada');
   };
+
+  // Sync poomsaeFlow ref whenever poomsaeFlow changes (so WS handlers avoid stale closure)
+  useEffect(() => {
+    poomsaeFlowRef.current = poomsaeFlow;
+  }, [poomsaeFlow]);
 
   // Reset poomsae flow when a new luta loads
   useEffect(() => {

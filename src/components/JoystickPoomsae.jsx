@@ -24,9 +24,12 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
   const lastMatchIdRef = useRef(null);
 
   // ─── Scoring form state ──────────────────────────────────────────
-  const [acuracia, setAcuracia] = useState('');
-  const [habTecnica, setHabTecnica] = useState('');
-  const [apresentacao, setApresentacao] = useState('');
+  // Recognized: acuracia starts at 4.00 (countdown), apresentacao = 3 sub-notas (0-2.0 each)
+  // Freestyle:  habTecnica (0-6), apresentacao = 2 sub-notas (0-2.0 each)
+  const [acuraciaVal, setAcuraciaVal] = useState(4.0);
+  const [habTecnicaVal, setHabTecnicaVal] = useState(0.0);
+  const [subNotasApres, setSubNotasApres] = useState([0.0, 0.0, 0.0]); // max 2.0 each
+  const [subNotasFreestyle, setSubNotasFreestyle] = useState([0.0, 0.0]); // Freestyle apresentacao 0-2.0 x2
 
   // ─── Submission state ────────────────────────────────────────────
   const [submetido, setSubmetido] = useState(false);
@@ -64,9 +67,10 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
             lastMatchIdRef.current = match.id;
             setMatchAtivo(match);
             setSubmetido(false);
-            setAcuracia('');
-            setHabTecnica('');
-            setApresentacao('');
+            setAcuraciaVal(4.0);
+            setHabTecnicaVal(0.0);
+            setSubNotasApres([0.0, 0.0, 0.0]);
+            setSubNotasFreestyle([0.0, 0.0]);
             setErro(null);
             setResultado(null);
           }
@@ -106,9 +110,10 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
           lastMatchIdRef.current = data.match_id;
           setMatchAtivo({ id: data.match_id, tipo: data.tipo_poomsae, forma_designada: data.forma });
           setSubmetido(false);
-          setAcuracia('');
-          setHabTecnica('');
-          setApresentacao('');
+          setAcuraciaVal(4.0);
+          setHabTecnicaVal(0.0);
+          setSubNotasApres([0.0, 0.0, 0.0]);
+          setSubNotasFreestyle([0.0, 0.0]);
           setErro(null);
           setResultado(null);
         } else if (data.tipo === 'poomsae_encerrado') {
@@ -126,26 +131,42 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
   // ─── Helpers ─────────────────────────────────────────────────────
   const isFreestyle = matchAtivo?.tipo === 'Freestyle';
 
-  const comp1Val = isFreestyle ? parseFloat(habTecnica) : parseFloat(acuracia);
-  const comp2Val = parseFloat(apresentacao);
-  const comp1Max = isFreestyle ? 6.0 : 4.0;
-  const comp2Max = isFreestyle ? 4.0 : 6.0;
+  // Recognized: acuracia countdown, apresentacao = sum of 3 sub-notas
+  const apresentacaoTotal = parseFloat((subNotasApres[0] + subNotasApres[1] + subNotasApres[2]).toFixed(1));
+  // Freestyle: habTecnica + sum of 2 sub-notas
+  const apresentacaoFreestyleTotal = parseFloat((subNotasFreestyle[0] + subNotasFreestyle[1]).toFixed(1));
+
+  const totalGeral = isFreestyle
+    ? parseFloat((habTecnicaVal + apresentacaoFreestyleTotal).toFixed(2))
+    : parseFloat((acuraciaVal + apresentacaoTotal).toFixed(2));
 
   const isValido = () => {
     if (!matchAtivo) return false;
-    return (
-      !isNaN(comp1Val) && comp1Val >= 0 && comp1Val <= comp1Max &&
-      !isNaN(comp2Val) && comp2Val >= 0 && comp2Val <= comp2Max
-    );
+    if (isFreestyle) {
+      return habTecnicaVal >= 0 && habTecnicaVal <= 6.0 && apresentacaoFreestyleTotal >= 0 && apresentacaoFreestyleTotal <= 4.0;
+    }
+    return acuraciaVal >= 0 && acuraciaVal <= 4.0 && apresentacaoTotal >= 0 && apresentacaoTotal <= 6.0;
   };
 
-  const quickButtons1 = isFreestyle
-    ? [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
-    : [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+  const deductAcuracia = (amount) => {
+    setAcuraciaVal(prev => parseFloat(Math.max(0, prev - amount).toFixed(1)));
+  };
 
-  const quickButtons2 = isFreestyle
-    ? [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-    : [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0];
+  const updateSubNota = (index, val) => {
+    setSubNotasApres(prev => {
+      const next = [...prev];
+      next[index] = parseFloat(parseFloat(val).toFixed(1));
+      return next;
+    });
+  };
+
+  const updateSubNotaFreestyle = (index, val) => {
+    setSubNotasFreestyle(prev => {
+      const next = [...prev];
+      next[index] = parseFloat(parseFloat(val).toFixed(1));
+      return next;
+    });
+  };
 
   const handleSubmit = async () => {
     if (!isValido() || !matchAtivo || !numeroJuiz) return;
@@ -157,8 +178,8 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
         juiz_id: usuario.email,
         numero_juiz: numeroJuiz,
         ...(isFreestyle
-          ? { score_freestyle: { habilidade_tecnica: comp1Val, apresentacao: comp2Val } }
-          : { score_recognized: { acuracia: comp1Val, apresentacao: comp2Val } }
+          ? { score_freestyle: { habilidade_tecnica: habTecnicaVal, apresentacao: apresentacaoFreestyleTotal } }
+          : { score_recognized: { acuracia: acuraciaVal, apresentacao: apresentacaoTotal } }
         )
       };
       const resp = await fetch(`${API_BASE}/api/poomsae/matches/${matchAtivo.id}/scores`, {
@@ -235,94 +256,159 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
     );
   }
 
-  // Scoring form
-  const tipo = matchAtivo?.tipo || 'Recognized';
-  const totalPreview = isValido() ? (comp1Val + comp2Val) : null;
+  // Scoring form — new WT UI
+  const SUB_LABELS_APRES = ['Ritmo e Potência', 'Espírito e Atitude', 'Téc. de Movimento'];
+  const SUB_LABELS_FREESTYLE = ['Expressão', 'Atitude'];
+
+  // Sub-nota step control helper
+  const SubNotaControl = ({ label, value, onChange, max = 2.0 }) => (
+    <div className="bg-gray-900 rounded-xl p-3 border border-gray-700">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">{label}</span>
+        <span className="text-white text-xl font-black tabular-nums">{value.toFixed(1)}</span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max={max}
+        step="0.1"
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full h-3 rounded-full accent-yellow-400 cursor-pointer"
+      />
+      <div className="flex justify-between mt-1">
+        <span className="text-gray-600 text-xs">0.0</span>
+        <span className="text-gray-600 text-xs">{max.toFixed(1)}</span>
+      </div>
+    </div>
+  );
 
   return (
     <div className="h-full flex flex-col bg-gray-900 p-4 overflow-auto">
 
       {/* Header */}
-      <div className="text-center mb-5 flex-shrink-0">
+      <div className="text-center mb-4 flex-shrink-0">
         <div className="inline-flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-full px-4 py-1 mb-2">
           <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
           <span className="text-gray-300 text-xs font-bold">JUIZ #{numeroJuiz}</span>
         </div>
-        <p className="text-yellow-400 text-sm font-black tracking-widest">{tipo.toUpperCase()} POOMSAE</p>
+        <p className="text-yellow-400 text-sm font-black tracking-widest">{(matchAtivo?.tipo || 'Recognized').toUpperCase()} POOMSAE</p>
         {matchAtivo?.forma_designada && (
           <p className="text-white font-bold text-lg mt-1">{matchAtivo.forma_designada}</p>
         )}
       </div>
 
-      {/* Form */}
       <div className="flex-1 flex flex-col gap-4 max-w-xs mx-auto w-full">
 
-        {/* Component 1 */}
-        <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-          <label className="block text-gray-300 font-bold text-sm mb-1">
-            {isFreestyle ? 'Habilidade Técnica' : 'Acurácia'}
-            <span className="text-gray-500 ml-2 font-normal">0.0 – {comp1Max.toFixed(1)}</span>
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            max={comp1Max}
-            value={isFreestyle ? habTecnica : acuracia}
-            onChange={(e) => isFreestyle ? setHabTecnica(e.target.value) : setAcuracia(e.target.value)}
-            className="w-full bg-gray-900 text-white text-4xl font-black text-center rounded-lg p-3 border-2 border-gray-600 focus:border-yellow-500 outline-none"
-            placeholder="0.0"
-          />
-          <div className="grid grid-cols-7 gap-1 mt-2">
-            {quickButtons1.map(v => (
-              <button
-                key={v}
-                onClick={() => isFreestyle ? setHabTecnica(String(v)) : setAcuracia(String(v))}
-                className={`py-1 rounded text-xs font-bold transition-colors ${(isFreestyle ? parseFloat(habTecnica) : parseFloat(acuracia)) === v ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-              >
-                {v.toFixed(1)}
-              </button>
-            ))}
-          </div>
-        </div>
+        {!isFreestyle ? (
+          <>
+            {/* ── ACURÁCIA: countdown from 4.00 ── */}
+            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+              <p className="text-gray-300 font-bold text-sm mb-3 text-center uppercase tracking-wider">
+                Acurácia <span className="text-gray-500 font-normal">(máx 4.0)</span>
+              </p>
+              <div className="text-center mb-4">
+                <span className={`text-7xl font-black tabular-nums ${acuraciaVal < 2.0 ? 'text-red-400' : acuraciaVal < 3.0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {acuraciaVal.toFixed(2)}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => deductAcuracia(0.1)}
+                  disabled={acuraciaVal <= 0}
+                  className="py-3 rounded-xl font-black text-lg bg-red-700 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors active:scale-95"
+                >
+                  −0.1
+                </button>
+                <button
+                  onClick={() => deductAcuracia(0.3)}
+                  disabled={acuraciaVal <= 0}
+                  className="py-3 rounded-xl font-black text-lg bg-red-900 hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors active:scale-95"
+                >
+                  −0.3
+                </button>
+                <button
+                  onClick={() => setAcuraciaVal(4.0)}
+                  className="py-3 rounded-xl font-bold text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors active:scale-95"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
 
-        {/* Component 2: Apresentação */}
-        <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-          <label className="block text-gray-300 font-bold text-sm mb-1">
-            Apresentação
-            <span className="text-gray-500 ml-2 font-normal">0.0 – {comp2Max.toFixed(1)}</span>
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            min="0"
-            max={comp2Max}
-            value={apresentacao}
-            onChange={(e) => setApresentacao(e.target.value)}
-            className="w-full bg-gray-900 text-white text-4xl font-black text-center rounded-lg p-3 border-2 border-gray-600 focus:border-yellow-500 outline-none"
-            placeholder="0.0"
-          />
-          <div className="grid grid-cols-7 gap-1 mt-2">
-            {quickButtons2.map(v => (
-              <button
-                key={v}
-                onClick={() => setApresentacao(String(v))}
-                className={`py-1 rounded text-xs font-bold transition-colors ${parseFloat(apresentacao) === v ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-              >
-                {v.toFixed(1)}
-              </button>
-            ))}
-          </div>
-        </div>
+            {/* ── APRESENTAÇÃO: 3 sub-notas 0-2.0 ── */}
+            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-gray-300 font-bold text-sm uppercase tracking-wider">
+                  Apresentação <span className="text-gray-500 font-normal">(máx 6.0)</span>
+                </p>
+                <span className="text-yellow-400 font-black text-lg tabular-nums">{apresentacaoTotal.toFixed(1)}</span>
+              </div>
+              <div className="space-y-3">
+                {SUB_LABELS_APRES.map((label, i) => (
+                  <SubNotaControl
+                    key={i}
+                    label={label}
+                    value={subNotasApres[i]}
+                    onChange={(val) => updateSubNota(i, val)}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* ── FREESTYLE: Habilidade Técnica (0-6) ── */}
+            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+              <p className="text-gray-300 font-bold text-sm mb-3 text-center uppercase tracking-wider">
+                Hab. Técnica <span className="text-gray-500 font-normal">(máx 6.0)</span>
+              </p>
+              <div className="text-center mb-3">
+                <span className="text-6xl font-black text-yellow-400 tabular-nums">{habTecnicaVal.toFixed(1)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="6"
+                step="0.1"
+                value={habTecnicaVal}
+                onChange={(e) => setHabTecnicaVal(parseFloat(e.target.value))}
+                className="w-full h-3 rounded-full accent-yellow-400 cursor-pointer"
+              />
+              <div className="flex justify-between mt-1">
+                <span className="text-gray-600 text-xs">0.0</span>
+                <span className="text-gray-600 text-xs">6.0</span>
+              </div>
+            </div>
 
-        {/* Total preview */}
-        {totalPreview !== null && (
-          <div className="bg-black rounded-xl p-3 text-center border border-gray-700">
-            <p className="text-gray-400 text-xs mb-0.5">TOTAL</p>
-            <p className="text-white text-5xl font-black">{totalPreview.toFixed(1)}</p>
-            <p className="text-gray-500 text-xs">/ 10.0</p>
-          </div>
+            {/* ── FREESTYLE: Apresentação (2 sub-notas 0-2.0) ── */}
+            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-gray-300 font-bold text-sm uppercase tracking-wider">
+                  Apresentação <span className="text-gray-500 font-normal">(máx 4.0)</span>
+                </p>
+                <span className="text-yellow-400 font-black text-lg tabular-nums">{apresentacaoFreestyleTotal.toFixed(1)}</span>
+              </div>
+              <div className="space-y-3">
+                {SUB_LABELS_FREESTYLE.map((label, i) => (
+                  <SubNotaControl
+                    key={i}
+                    label={label}
+                    value={subNotasFreestyle[i]}
+                    onChange={(val) => updateSubNotaFreestyle(i, val)}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
         )}
+
+        {/* Total */}
+        <div className="bg-black rounded-xl p-3 text-center border border-gray-700">
+          <p className="text-gray-400 text-xs mb-0.5">TOTAL</p>
+          <p className="text-white text-5xl font-black tabular-nums">{totalGeral.toFixed(2)}</p>
+          <p className="text-gray-500 text-xs">/ 10.0</p>
+        </div>
 
         {/* Error */}
         {erro && (
@@ -336,7 +422,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
         <button
           onClick={handleSubmit}
           disabled={!isValido() || enviando}
-          className="w-full py-5 rounded-xl font-black text-xl tracking-widest uppercase transition-all bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-lg mb-4"
+          className="w-full py-5 rounded-xl font-black text-xl tracking-widest uppercase transition-all bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-lg mb-4 active:scale-95"
         >
           {enviando ? 'Enviando...' : 'Confirmar Nota'}
         </button>
