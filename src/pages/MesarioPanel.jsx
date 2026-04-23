@@ -668,7 +668,7 @@ Deseja RECUPERAR esta sessão?
       if (existing.ok) {
         const list = await existing.json();
         const mine = list.find(m => m.atleta_id === atletaId);
-        if (mine) { matchId = mine.id; }
+        if (mine) { matchId = mine._id || mine.id; }
       }
     } catch (_) {}
 
@@ -689,9 +689,10 @@ Deseja RECUPERAR esta sessão?
       });
       if (!resp.ok) throw new Error('Erro ao criar match poomsae');
       const match = await resp.json();
-      matchId = match.id;
+      matchId = match._id || match.id; // API returns _id (MongoDB ObjectId serialized)
 
-      await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/iniciar`, { method: 'POST' });
+      const iniciarResp = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/iniciar`, { method: 'POST' });
+      if (!iniciarResp.ok) throw new Error('Erro ao iniciar match poomsae');
     }
 
     // Broadcast to laterais via WS
