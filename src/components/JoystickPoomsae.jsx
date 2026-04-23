@@ -36,6 +36,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [apresentacaoEncerrada, setApresentacaoEncerrada] = useState(false); // banner: "Apresentação Encerrada — Submeta sua nota"
 
   // ─── 1. Determine judge number from camp/quadra config ───────────
   useEffect(() => {
@@ -67,6 +68,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
             lastMatchIdRef.current = match.id;
             setMatchAtivo(match);
             setSubmetido(false);
+            setApresentacaoEncerrada(false);
             setAcuraciaVal(4.0);
             setHabTecnicaVal(0.0);
             setSubNotasApres([0.0, 0.0, 0.0]);
@@ -110,6 +112,7 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
           lastMatchIdRef.current = data.match_id;
           setMatchAtivo({ id: data.match_id, tipo: data.tipo_poomsae, forma_designada: data.forma });
           setSubmetido(false);
+          setApresentacaoEncerrada(false);
           setAcuraciaVal(4.0);
           setHabTecnicaVal(0.0);
           setSubNotasApres([0.0, 0.0, 0.0]);
@@ -117,10 +120,9 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
           setErro(null);
           setResultado(null);
         } else if (data.tipo === 'poomsae_encerrado') {
-          // Apresentação terminou — limpar match ativo se não submeteu ainda
-          if (!submetido) {
-            setMatchAtivo(null);
-          }
+          // Apresentação terminou — manter form ativo para o juiz poder submeter
+          // Apenas mostrar banner informativo, NÃO limpar matchAtivo
+          setApresentacaoEncerrada(true);
         }
       } catch (_) { /* ignore parse errors */ }
     };
@@ -189,7 +191,10 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
       });
       if (!resp.ok) {
         const err = await resp.json();
-        throw new Error(err.detail || 'Erro ao submeter nota');
+        const errMsg = Array.isArray(err.detail)
+          ? err.detail.map(e => e.msg || e.message || JSON.stringify(e)).join('; ')
+          : (typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
+        throw new Error(errMsg || 'Erro ao submeter nota');
       }
       setSubmetido(true);
       if (navigator.vibrate) navigator.vibrate([100, 50, 300]);
@@ -285,6 +290,13 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
 
   return (
     <div className="h-full flex flex-col bg-gray-900 p-4 overflow-auto">
+
+      {/* Encerrada banner */}
+      {apresentacaoEncerrada && !submetido && (
+        <div className="bg-orange-900/60 border-2 border-orange-500 rounded-xl px-4 py-3 mb-3 text-center animate-pulse flex-shrink-0">
+          <p className="text-orange-300 font-black text-sm">⏱ Apresentação Encerrada — Submeta sua nota!</p>
+        </div>
+      )}
 
       {/* Header */}
       <div className="text-center mb-4 flex-shrink-0">

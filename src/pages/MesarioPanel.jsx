@@ -1189,6 +1189,16 @@ Deseja RECUPERAR esta sessão?
                         ■ Encerrar Apresentação
                       </button>
                     )}
+
+                    {/* Avançar para Hong (coletando_vermelho) */}
+                    {!isApresentando && isVerm && (
+                      <button
+                        onClick={iniciarApresentacaoAzul}
+                        className="w-full mt-2 py-3 rounded-xl font-black text-base uppercase tracking-wider transition-colors bg-blue-800 hover:bg-blue-700 text-white border border-blue-600"
+                      >
+                        ▶ Iniciar Hong (Pular Coleta)
+                      </button>
+                    )}
                   </div>
 
                   {/* Coluna 2: Progresso de notas */}
