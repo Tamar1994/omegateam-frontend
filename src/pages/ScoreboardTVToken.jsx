@@ -288,6 +288,7 @@ function ScoreboardKyorugui({ luta }) {
 function ScoreboardPoomsae({ luta }) {
   const [matches, setMatches] = React.useState([]);
   const [scoresColetando, setScoresColetando] = React.useState(null); // scores do match em coleta
+  const [scoresChong, setScoresChong] = React.useState(null); // scores finalizados do Chong
   const [timerSegundos, setTimerSegundos] = React.useState(null);
   const timerIntervalRef = React.useRef(null);
   const activeMatchIdRef = React.useRef(null);
@@ -373,6 +374,23 @@ function ScoreboardPoomsae({ luta }) {
 
   React.useEffect(() => () => clearInterval(timerIntervalRef.current), []);
 
+  // Poll scores do match finalizado do Chong — para exibir breakdown por juiz
+  React.useEffect(() => {
+    if (!matchFinalVermelho) { setScoresChong(null); return; }
+    const matchId = matchFinalVermelho._id;
+    const buscar = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/scores`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setScoresChong(data);
+      } catch {}
+    };
+    buscar();
+    const iv = setInterval(buscar, 3000);
+    return () => clearInterval(iv);
+  }, [matchFinalVermelho?._id]);
+
   const formatarTempo = (s) => {
     if (s === null) return '--:--';
     return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
@@ -403,10 +421,13 @@ function ScoreboardPoomsae({ luta }) {
     fase = 'espera';
   }
 
-  // ── Helpers de descarte por componente ─────────────────────────────
-  const calcularDescartes = (scores, campo) => {
-    const vals = scores.map(s => s[campo]).filter(v => v != null);
-    if (vals.length < 4) return { max: null, min: null }; // sem descarte com < 4
+  // ── Helpers de campo por tipo de score ─────────────────────────────
+  const getAc = (s) => s?.score_recognized?.acuracia ?? null;
+  const getAp = (s) => s?.score_recognized?.apresentacao ?? s?.score_freestyle?.apresentacao ?? null;
+  const getTec = (s) => s?.score_freestyle?.habilidade_tecnica ?? null;
+  const calcDesc = (arr, getter) => {
+    const vals = arr.map(getter).filter(v => v != null);
+    if (vals.length < 4) return { max: null, min: null };
     return { max: Math.max(...vals), min: Math.min(...vals) };
   };
 
@@ -416,16 +437,17 @@ function ScoreboardPoomsae({ luta }) {
     const numJuizes = match.numero_juizes || 1;
     const scoresRecebidos = scoresColetando?.scores || [];
     const todosSubmeteram = scoresRecebidos.length >= numJuizes;
-    const atletaCor = isChong ? 'vermelho' : 'azul'; // quem acabou de apresentar
+    const atletaCor = isChong ? 'vermelho' : 'azul';
     const atletaNome = atletaCor === 'vermelho' ? nome_vermelho : nome_azul;
     const corBg = atletaCor === 'vermelho' ? 'from-red-950 to-gray-950' : 'from-blue-950 to-gray-950';
     const corText = atletaCor === 'vermelho' ? 'text-red-400' : 'text-blue-400';
     const corBorder = atletaCor === 'vermelho' ? 'border-red-700' : 'border-blue-700';
+    const isFreestyle = match.tipo_poomsae === 'Freestyle';
 
-    // Calcular descartes por componente (só quando todos submeteram)
-    const descAcuracia = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'acuracia') : { max: null, min: null };
-    const descApresentacao = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'apresentacao') : { max: null, min: null };
-    const descTecnica = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'habilidade_tecnica') : { max: null, min: null };
+    // Descartes por componente (só quando todos submeteram, com 4+ juízes)
+    const descAcuracia = todosSubmeteram ? calcDesc(scoresRecebidos, getAc) : { max: null, min: null };
+    const descApresentacao = todosSubmeteram ? calcDesc(scoresRecebidos, getAp) : { max: null, min: null };
+    const descTecnica = todosSubmeteram ? calcDesc(scoresRecebidos, getTec) : { max: null, min: null };
 
     const isDescartadoAcuracia = (val) => val != null && descAcuracia.max != null && (val === descAcuracia.max || val === descAcuracia.min);
     const isDescartadoApresentacao = (val) => val != null && descApresentacao.max != null && (val === descApresentacao.max || val === descApresentacao.min);
@@ -468,9 +490,9 @@ function ScoreboardPoomsae({ luta }) {
               const submeteu = !!score;
               const mostrarValores = todosSubmeteram && submeteu;
 
-              const acVal = score?.acuracia;
-              const apVal = score?.apresentacao;
-              const tecVal = score?.habilidade_tecnica;
+              const acVal = getAc(score);
+              const apVal = getAp(score);
+              const tecVal = getTec(score);
 
               return (
                 <div key={juizNum} className={`grid grid-cols-4 gap-3 mb-3 rounded-xl p-4 border ${submeteu ? 'bg-black/40 border-gray-600' : 'bg-black/20 border-gray-800'}`}>
@@ -538,6 +560,210 @@ function ScoreboardPoomsae({ luta }) {
                 <p className="text-green-400 text-xl font-black">✓ Todas as notas recebidas — Calculando...</p>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── TELA SCORES CHONG: breakdown por juiz após Chong finalizar ──────
+  if (fase === 'chong_scores') {
+    const resultado = matchFinalVermelho?.resultado;
+    const numJuizes = matchFinalVermelho?.numero_juizes || 1;
+    const scoresArr = scoresChong?.scores || [];
+    const isFreestyle = matchFinalVermelho?.tipo_poomsae === 'Freestyle';
+
+    // Usar detalhe do resultado para identificar descartes (já calculado pelo backend)
+    const detAc = resultado?.detalhe_acuracia;
+    const detAp = resultado?.detalhe_apresentacao;
+    const detTec = resultado?.detalhe_habilidade_tecnica;
+
+    const isAcDesc = (val) => val != null && detAc && detAc.num_juizes >= 4 && (val === detAc.score_max || val === detAc.score_min);
+    const isApDesc = (val) => val != null && detAp && detAp.num_juizes >= 4 && (val === detAp.score_max || val === detAp.score_min);
+    const isTecDesc = (val) => val != null && detTec && detTec.num_juizes >= 4 && (val === detTec.score_max || val === detTec.score_min);
+
+    const ScoreCell = ({ val, isDesc }) => (
+      <div className="flex items-center justify-center">
+        <span className={`text-3xl font-black tabular-nums ${
+          isDesc ? 'text-gray-500 line-through opacity-40' : 'text-white'
+        }`}>{val != null ? val.toFixed(1) : '—'}</span>
+      </div>
+    );
+
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col select-none">
+        {/* Header */}
+        <div className="bg-gray-900 py-4 px-8 flex justify-between items-center border-b-2 border-red-800">
+          <p className="text-red-400 text-xl font-black tracking-widest">🔴 CHONG — NOTAS FINAIS</p>
+          <p className="text-gray-300 font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-10 opacity-50" />
+        </div>
+
+        <div className="flex-1 flex">
+          {/* Esquerda: Chong scores breakdown */}
+          <div className="flex-1 flex flex-col p-10 gap-6 border-r border-gray-800">
+            <div className="text-center">
+              <h2 className="text-4xl font-black text-white">{nome_vermelho}</h2>
+              {equipe_vermelho && <p className="text-red-300 text-lg font-bold mt-1">{equipe_vermelho}</p>}
+              <p className="text-red-400 text-sm font-bold mt-1">{matchFinalVermelho?.forma_designada || luta.poomsae_1}</p>
+            </div>
+
+            {resultado && (
+              <div className="text-center bg-red-950/40 rounded-2xl py-4 border border-red-800">
+                <p className="text-gray-400 text-xs font-black tracking-widest mb-1">PONTUAÇÃO FINAL</p>
+                <p className="text-red-400 text-6xl font-black tabular-nums">{resultado.pontuacao_final?.toFixed(3)}</p>
+              </div>
+            )}
+
+            {/* Tabela por juiz */}
+            <div>
+              <div className="grid grid-cols-3 gap-3 mb-2">
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">ÁRBITRO</div>
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">{isFreestyle ? 'TÉCNICA' : 'ACCURACY'}</div>
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">PRESENTATION</div>
+              </div>
+              {Array.from({ length: numJuizes }, (_, i) => {
+                const juizNum = i + 1;
+                const score = scoresArr.find(s => s.numero_juiz === juizNum);
+                const acVal = getAc(score);
+                const apVal = getAp(score);
+                const tecVal = getTec(score);
+                return (
+                  <div key={juizNum} className="grid grid-cols-3 gap-3 mb-3 rounded-xl p-3 border bg-gray-900/50 border-gray-700">
+                    <div className="flex items-center justify-center">
+                      <span className="text-2xl font-black text-white">L{juizNum}</span>
+                    </div>
+                    {isFreestyle
+                      ? <ScoreCell val={tecVal} isDesc={isTecDesc(tecVal)} />
+                      : <ScoreCell val={acVal} isDesc={isAcDesc(acVal)} />
+                    }
+                    <ScoreCell val={apVal} isDesc={isApDesc(apVal)} />
+                  </div>
+                );
+              })}
+              {/* Médias finais */}
+              {resultado && (
+                <div className="grid grid-cols-3 gap-3 mt-2 rounded-xl p-3 border border-yellow-700 bg-yellow-950/30">
+                  <div className="text-yellow-400 text-sm font-black text-center flex items-center justify-center">MÉDIA</div>
+                  <div className="text-center">
+                    <span className="text-yellow-300 text-2xl font-black">
+                      {isFreestyle ? (detTec?.media?.toFixed(2) ?? '—') : (detAc?.media?.toFixed(2) ?? '—')}
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-yellow-300 text-2xl font-black">{detAp?.media?.toFixed(2) ?? '—'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Direita: Hong próximo */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-10 bg-blue-950/10">
+            <p className="text-blue-400 text-2xl font-black">🔵 HONG</p>
+            <h2 className="text-5xl font-black text-white text-center leading-tight">{nome_azul}</h2>
+            {equipe_azul && <p className="text-blue-300 text-xl font-bold">{equipe_azul}</p>}
+            <p className="text-yellow-400 text-2xl font-black animate-pulse mt-6">▶ PRÓXIMO A APRESENTAR</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── TELA SCORES CHONG: breakdown por juiz após Chong finalizar ──────
+  if (fase === 'chong_scores') {
+    const resultado = matchFinalVermelho?.resultado;
+    const numJuizes = matchFinalVermelho?.numero_juizes || 1;
+    const scoresArr = scoresChong?.scores || [];
+    const isFreestyle = matchFinalVermelho?.tipo_poomsae === 'Freestyle';
+
+    const detAc = resultado?.detalhe_acuracia;
+    const detAp = resultado?.detalhe_apresentacao;
+    const detTec = resultado?.detalhe_habilidade_tecnica;
+
+    const isAcDesc = (val) => val != null && detAc && detAc.num_juizes >= 4 && (val === detAc.score_max || val === detAc.score_min);
+    const isApDesc = (val) => val != null && detAp && detAp.num_juizes >= 4 && (val === detAp.score_max || val === detAp.score_min);
+    const isTecDesc = (val) => val != null && detTec && detTec.num_juizes >= 4 && (val === detTec.score_max || val === detTec.score_min);
+
+    const ScoreCell = ({ val, isDesc }) => (
+      <div className="flex items-center justify-center">
+        <span className={`text-3xl font-black tabular-nums ${isDesc ? 'text-gray-500 line-through opacity-40' : 'text-white'}`}>
+          {val != null ? val.toFixed(1) : '—'}
+        </span>
+      </div>
+    );
+
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col select-none">
+        <div className="bg-gray-900 py-4 px-8 flex justify-between items-center border-b-2 border-red-800">
+          <p className="text-red-400 text-xl font-black tracking-widest">🔴 CHONG — NOTAS FINAIS</p>
+          <p className="text-gray-300 font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-10 opacity-50" />
+        </div>
+
+        <div className="flex-1 flex">
+          {/* Esquerda: Chong scores breakdown */}
+          <div className="flex-1 flex flex-col p-10 gap-6 border-r border-gray-800">
+            <div className="text-center">
+              <h2 className="text-4xl font-black text-white">{nome_vermelho}</h2>
+              {equipe_vermelho && <p className="text-red-300 text-lg font-bold mt-1">{equipe_vermelho}</p>}
+              <p className="text-red-400 text-sm font-bold mt-1">{matchFinalVermelho?.forma_designada || luta.poomsae_1}</p>
+            </div>
+
+            {resultado && (
+              <div className="text-center bg-red-950/40 rounded-2xl py-4 border border-red-800">
+                <p className="text-gray-400 text-xs font-black tracking-widest mb-1">PONTUAÇÃO FINAL</p>
+                <p className="text-red-400 text-6xl font-black tabular-nums">{resultado.pontuacao_final?.toFixed(3)}</p>
+              </div>
+            )}
+
+            <div>
+              <div className="grid grid-cols-3 gap-3 mb-2">
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">ÁRBITRO</div>
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">{isFreestyle ? 'TÉCNICA' : 'ACCURACY'}</div>
+                <div className="text-gray-500 text-xs font-black tracking-widest text-center">PRESENTATION</div>
+              </div>
+              {Array.from({ length: numJuizes }, (_, i) => {
+                const juizNum = i + 1;
+                const score = scoresArr.find(s => s.numero_juiz === juizNum);
+                const acVal = getAc(score);
+                const apVal = getAp(score);
+                const tecVal = getTec(score);
+                return (
+                  <div key={juizNum} className="grid grid-cols-3 gap-3 mb-3 rounded-xl p-3 border bg-gray-900/50 border-gray-700">
+                    <div className="flex items-center justify-center">
+                      <span className="text-2xl font-black text-white">L{juizNum}</span>
+                    </div>
+                    {isFreestyle
+                      ? <ScoreCell val={tecVal} isDesc={isTecDesc(tecVal)} />
+                      : <ScoreCell val={acVal} isDesc={isAcDesc(acVal)} />
+                    }
+                    <ScoreCell val={apVal} isDesc={isApDesc(apVal)} />
+                  </div>
+                );
+              })}
+              {resultado && (
+                <div className="grid grid-cols-3 gap-3 mt-2 rounded-xl p-3 border border-yellow-700 bg-yellow-950/30">
+                  <div className="text-yellow-400 text-sm font-black text-center flex items-center justify-center">MÉDIA</div>
+                  <div className="text-center">
+                    <span className="text-yellow-300 text-2xl font-black">
+                      {isFreestyle ? (detTec?.media?.toFixed(2) ?? '—') : (detAc?.media?.toFixed(2) ?? '—')}
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-yellow-300 text-2xl font-black">{detAp?.media?.toFixed(2) ?? '—'}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Direita: Hong próximo */}
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-10 bg-blue-950/10">
+            <p className="text-blue-400 text-2xl font-black">🔵 HONG</p>
+            <h2 className="text-5xl font-black text-white text-center leading-tight">{nome_azul}</h2>
+            {equipe_azul && <p className="text-blue-300 text-xl font-bold">{equipe_azul}</p>}
+            <p className="text-yellow-400 text-2xl font-black animate-pulse mt-6">▶ PRÓXIMO A APRESENTAR</p>
           </div>
         </div>
       </div>
