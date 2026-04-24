@@ -719,7 +719,7 @@ Deseja RECUPERAR esta sessão?
       setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setPoomsaeFlow('apresentando_vermelho');
       resetarRelogio(getTempoLimitePoomsae());
-      salvarTurnoPoomsae('chong_p1').catch(() => {});
+      salvarTurnoPoomsae(rodadaAtual === 2 ? 'chong_p2' : 'chong_p1').catch(() => {});
     } catch (err) {
       alert('Erro ao iniciar apresentação: ' + err.message);
     }
@@ -749,7 +749,7 @@ Deseja RECUPERAR esta sessão?
       setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setPoomsaeFlow('apresentando_azul');
       resetarRelogio(getTempoLimitePoomsae());
-      salvarTurnoPoomsae('hong_p1').catch(() => {});
+      salvarTurnoPoomsae(rodadaAtual === 2 ? 'hong_p2' : 'hong_p1').catch(() => {});
     } catch (err) {
       alert('Erro ao iniciar apresentação: ' + err.message);
     }
@@ -852,15 +852,16 @@ Deseja RECUPERAR esta sessão?
         const resp = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/scores`);
         if (!resp.ok) return;
         const data = await resp.json();
-
+        // Normalize API response: scores → recebidos (display expects this shape)
+        const normalized = { recebidos: data.scores || [], pendentes: data.pendentes || [] };
         if (flow === 'coletando_vermelho') {
-          setPoomsaeScoresVermelho(data);
+          setPoomsaeScoresVermelho(normalized);
         } else {
-          setPoomsaeScoresAzul(data);
+          setPoomsaeScoresAzul(normalized);
         }
 
-        // All judges submitted — fetch result
-        if (Array.isArray(data.pendentes) && data.pendentes.length === 0 && Array.isArray(data.recebidos) && data.recebidos.length > 0) {
+        // Fetch result as soon as any score was received (backend auto-calculates when all judges done)
+        if ((data.scores_recebidos || 0) > 0) {
           const mResp = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}`);
           if (mResp.ok) {
             const mData = await mResp.json();
@@ -1219,8 +1220,8 @@ Deseja RECUPERAR esta sessão?
                       </button>
                     )}
 
-                    {/* Avançar para Rodada 2 (coletando_azul) */}
-                    {!isApresentando && !isVerm && (
+                    {/* Avançar para Rodada 2 (apenas quando na rodada 1 e existe poomsae_2) */}
+                    {!isApresentando && !isVerm && rodadaAtual === 1 && lutaAtual?.poomsae_2 && (
                       <button
                         onClick={iniciarRodada2}
                         className="w-full mt-2 py-3 rounded-xl font-black text-base uppercase tracking-wider transition-colors bg-purple-800 hover:bg-purple-700 text-white border border-purple-600"
