@@ -341,7 +341,13 @@ function ScoreboardPoomsae({ luta }) {
     if (matchAtivo._id === activeMatchIdRef.current) return;
     activeMatchIdRef.current = matchAtivo._id;
     const limite = matchAtivo.tipo_poomsae === 'Freestyle' ? 100 : 90;
-    setTimerSegundos(limite);
+    // Sync timer with real start time from backend (timestamp_inicio)
+    let remaining = limite;
+    if (matchAtivo.timestamp_inicio) {
+      const elapsed = Math.floor((Date.now() - new Date(matchAtivo.timestamp_inicio).getTime()) / 1000);
+      remaining = Math.max(0, limite - elapsed);
+    }
+    setTimerSegundos(remaining);
     clearInterval(timerIntervalRef.current);
     timerIntervalRef.current = setInterval(() => {
       setTimerSegundos(prev => (prev !== null && prev > 0) ? prev - 1 : 0);

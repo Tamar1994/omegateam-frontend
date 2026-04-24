@@ -52,6 +52,7 @@ export function MesarioPanel() {
   //              apresentando_azul | coletando_azul | resultado | encerrada
   const [poomsaeFlow, setPoomsaeFlow] = useState('aguardando');
   const poomsaeFlowRef = useRef('aguardando'); // keep ref in sync for WS handlers (avoids stale closure)
+  const [rodadaAtual, setRodadaAtual] = useState(1); // round 1 or 2 (when luta has poomsae_2)
   const [poomsaeMatchVermelho, setPoomsaeMatchVermelho] = useState(null); // {id, resultado}
   const [poomsaeMatchAzul, setPoomsaeMatchAzul] = useState(null);
   const [poomsaeScoresVermelho, setPoomsaeScoresVermelho] = useState({ recebidos: [], pendentes: [] });
@@ -659,7 +660,7 @@ Deseja RECUPERAR esta sessão?
   const criarEIniciarMatchPoomsae = async (atletaCor) => {
     const atletaStr = atletaCor === 'vermelho' ? lutaAtual.atleta_vermelho : lutaAtual.atleta_azul;
     const atletaId = extrairAtletaId(atletaStr);
-    const forma = lutaAtual.poomsae_1 || 'Poomsae';
+    const forma = (rodadaAtual === 2 ? lutaAtual.poomsae_2 : lutaAtual.poomsae_1) || lutaAtual.poomsae_1 || 'Poomsae';
 
     let matchId = null;
     // Check for existing active match first
@@ -683,7 +684,7 @@ Deseja RECUPERAR esta sessão?
           tipo: tipoPoomsae,
           forma_designada: forma,
           divisao: lutaAtual.nome_categoria || 'Geral',
-          rodada: 1,
+          rodada: rodadaAtual,
           numero_juizes: lateraisConectados.length > 0 ? Math.min(lateraisConectados.length, 7) : 5,
         })
       });
@@ -822,8 +823,21 @@ Deseja RECUPERAR esta sessão?
       setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
       setTipoPoomsae(lutaAtual.tipo_poomsae || 'Recognized');
+      setRodadaAtual(1);
     }
   }, [lutaAtual?._id]);
+
+  // Iniciar segunda rodada — reseta matches e volta ao estado aguardando
+  const iniciarRodada2 = () => {
+    setRodadaAtual(2);
+    setPoomsaeMatchVermelho(null);
+    setPoomsaeMatchAzul(null);
+    setPoomsaeScoresVermelho({ recebidos: [], pendentes: [] });
+    setPoomsaeScoresAzul({ recebidos: [], pendentes: [] });
+    setDeducoesVermelho({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+    setDeducoesAzul({ saiu_zona: false, fora_do_tempo: false, num_kyeong_go: 0 });
+    setPoomsaeFlow('aguardando');
+  };
 
   // Poll scores while collecting
   useEffect(() => {
@@ -1048,7 +1062,11 @@ Deseja RECUPERAR esta sessão?
               <div>
                 <p className="text-xs text-gray-400 uppercase tracking-wider">Modalidade</p>
                 <p className="font-black text-white text-lg">{tipoPoomsae} Poomsae</p>
-                {lutaAtual.poomsae_1 && <p className="text-yellow-400 text-sm font-bold">Forma: {lutaAtual.poomsae_1}</p>}
+                {(rodadaAtual === 2 ? lutaAtual.poomsae_2 : lutaAtual.poomsae_1) && (
+                  <p className="text-yellow-400 text-sm font-bold">
+                    R{rodadaAtual} — Forma: {rodadaAtual === 2 ? lutaAtual.poomsae_2 : lutaAtual.poomsae_1}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2">
                 {['Recognized', 'Freestyle'].map(tipo => (
@@ -1198,6 +1216,16 @@ Deseja RECUPERAR esta sessão?
                         className="w-full mt-2 py-3 rounded-xl font-black text-base uppercase tracking-wider transition-colors bg-blue-800 hover:bg-blue-700 text-white border border-blue-600"
                       >
                         ▶ Iniciar Hong (Pular Coleta)
+                      </button>
+                    )}
+
+                    {/* Avançar para Rodada 2 (coletando_azul) */}
+                    {!isApresentando && !isVerm && (
+                      <button
+                        onClick={iniciarRodada2}
+                        className="w-full mt-2 py-3 rounded-xl font-black text-base uppercase tracking-wider transition-colors bg-purple-800 hover:bg-purple-700 text-white border border-purple-600"
+                      >
+                        ▶ Iniciar Rodada 2 (Pular Coleta)
                       </button>
                     )}
                   </div>
