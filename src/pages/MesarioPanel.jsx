@@ -300,8 +300,9 @@ Deseja RECUPERAR esta sessão?
 
             // ✅ STATUS DE LATERAIS/JUÍZES CONECTADOS
             else if (data.tipo === 'laterais_atualizacao' || data.status === 'laterais_atualizacao') {
-              console.log('🔄 [Poomsae] Juízes conectados:', data.laterais_conectados);
-              setLateraisConectados(data.laterais_conectados || []);
+              const lista = (data.laterais_conectados || []).filter(e => e !== usuarioLogado?.email);
+              console.log('🔄 [Poomsae] Juízes conectados:', lista);
+              setLateraisConectados(lista);
             }
           } catch (e) {
             console.error('❌ [Poomsae] Erro ao processar mensagem:', e);
@@ -369,7 +370,7 @@ Deseja RECUPERAR esta sessão?
               setAlertaLateralCaiu(null);
             }
             
-            setLateraisConectados(data.laterais_conectados || []);
+            setLateraisConectados((data.laterais_conectados || []).filter(e => e !== usuarioLogado?.email));
             return;
           }
 
@@ -685,7 +686,7 @@ Deseja RECUPERAR esta sessão?
           forma_designada: forma,
           divisao: lutaAtual.nome_categoria || 'Geral',
           rodada: rodadaAtual,
-          numero_juizes: lateraisConectados.length > 0 ? Math.min(lateraisConectados.length, 7) : 5,
+          numero_juizes: Math.min(Math.max([1,2,3,4,5].filter(i => !!minhaQuadra?.[`lateral${i}_email`]).length, 1), 7),
         })
       });
       if (!resp.ok) throw new Error('Erro ao criar match poomsae');
