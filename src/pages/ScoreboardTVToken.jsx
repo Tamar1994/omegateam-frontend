@@ -287,6 +287,7 @@ function ScoreboardKyorugui({ luta }) {
 // ==========================================
 function ScoreboardPoomsae({ luta }) {
   const [matches, setMatches] = React.useState([]);
+  const [scoresColetando, setScoresColetando] = React.useState(null); // scores do match em coleta
   const [timerSegundos, setTimerSegundos] = React.useState(null);
   const timerIntervalRef = React.useRef(null);
   const activeMatchIdRef = React.useRef(null);
@@ -297,7 +298,7 @@ function ScoreboardPoomsae({ luta }) {
   const equipe_vermelho = luta.atleta_vermelho?.match(/\(([^)]+)\)$/)?.[1] || '';
   const equipe_azul = luta.atleta_azul?.match(/\(([^)]+)\)$/)?.[1] || '';
 
-  // Poll poomsae matches every 3 seconds
+  // Poll poomsae matches every 1.5s
   React.useEffect(() => {
     if (!lutaId) return;
     const buscar = async () => {
@@ -309,27 +310,44 @@ function ScoreboardPoomsae({ luta }) {
       } catch {}
     };
     buscar();
-    const iv = setInterval(buscar, 1500); // 1.5s: resposta rápida ao iniciar apresentação
+    const iv = setInterval(buscar, 1500);
     return () => clearInterval(iv);
   }, [lutaId]);
 
   const STATUSES_FIM = ['Aguardando Scores', 'Calculado', 'Concluído'];
+  const STATUSES_COLETANDO = ['Aguardando Scores'];
 
-  // Use turno_poomsae from luta to know who is presenting (saved by MesarioPanel)
   const turno = luta.turno_poomsae || 'chong_p1';
   const isChong = !turno.startsWith('hong');
 
-  // Find the actively presenting match (Em Andamento) — robust against stale Agendado matches
   const matchAtivo = matches.find(m => m.status === 'Em Andamento') || null;
+  // Match que acabou de encerrar e está coletando notas (não tem resultado ainda)
+  const matchColetando = matches.find(m => STATUSES_COLETANDO.includes(m.status) && !m.resultado) || null;
 
-  // Finalized matches sorted by creation time (Chong first, Hong second)
   const matchesFinalizados = matches
     .filter(m => STATUSES_FIM.includes(m.status))
     .sort((a, b) => new Date(a.timestamp_criacao || 0) - new Date(b.timestamp_criacao || 0));
   const matchFinalVermelho = matchesFinalizados[0] || null;
   const matchFinalAzul = matchesFinalizados[1] || null;
 
-  // Timer — reinicia quando um novo match vai a Em Andamento
+  // Poll scores quando há match coletando
+  React.useEffect(() => {
+    if (!matchColetando) { setScoresColetando(null); return; }
+    const matchId = matchColetando._id;
+    const buscar = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/scores`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setScoresColetando(data);
+      } catch {}
+    };
+    buscar();
+    const iv = setInterval(buscar, 2000);
+    return () => clearInterval(iv);
+  }, [matchColetando?._id]);
+
+  // Timer
   React.useEffect(() => {
     if (!matchAtivo) {
       clearInterval(timerIntervalRef.current);
@@ -341,7 +359,6 @@ function ScoreboardPoomsae({ luta }) {
     if (matchAtivo._id === activeMatchIdRef.current) return;
     activeMatchIdRef.current = matchAtivo._id;
     const limite = matchAtivo.tipo_poomsae === 'Freestyle' ? 100 : 90;
-    // Sync timer with real start time from backend (timestamp_inicio)
     let remaining = limite;
     if (matchAtivo.timestamp_inicio) {
       const elapsed = Math.floor((Date.now() - new Date(matchAtivo.timestamp_inicio).getTime()) / 1000);
@@ -373,19 +390,158 @@ function ScoreboardPoomsae({ luta }) {
   const turnoSet = !!luta.turno_poomsae;
   let fase;
   if (matchAtivo) {
-    // Match está "Em Andamento" — tela fullscreen do apresentador atual
     fase = isChong ? 'vermelho_apresentando' : 'azul_apresentando';
+  } else if (matchColetando) {
+    fase = 'coletando';
   } else if (matchesFinalizados.length >= 2) {
     fase = 'resultado';
   } else if (matchesFinalizados.length >= 1) {
-    // Chong finalizou; se turno já mudou para hong, mostrar Hong apresentando (poll pode estar atrasado)
     fase = !isChong ? 'azul_apresentando' : 'aguardando_azul';
   } else if (turnoSet) {
-    // turno_poomsae foi definido mas match ainda não foi encontrado no poll (< 1.5s de atraso)
-    // → mostrar tela fullscreen imediatamente com base no turno
     fase = isChong ? 'vermelho_apresentando' : 'azul_apresentando';
   } else {
     fase = 'espera';
+  }
+
+  // ── Helpers de descarte por componente ─────────────────────────────
+  const calcularDescartes = (scores, campo) => {
+    const vals = scores.map(s => s[campo]).filter(v => v != null);
+    if (vals.length < 4) return { max: null, min: null }; // sem descarte com < 4
+    return { max: Math.max(...vals), min: Math.min(...vals) };
+  };
+
+  // ── TELA COLETANDO: árbitros enviando notas ──────────────────────
+  if (fase === 'coletando') {
+    const match = matchColetando;
+    const numJuizes = match.numero_juizes || 1;
+    const scoresRecebidos = scoresColetando?.scores || [];
+    const todosSubmeteram = scoresRecebidos.length >= numJuizes;
+    const atletaCor = isChong ? 'vermelho' : 'azul'; // quem acabou de apresentar
+    const atletaNome = atletaCor === 'vermelho' ? nome_vermelho : nome_azul;
+    const corBg = atletaCor === 'vermelho' ? 'from-red-950 to-gray-950' : 'from-blue-950 to-gray-950';
+    const corText = atletaCor === 'vermelho' ? 'text-red-400' : 'text-blue-400';
+    const corBorder = atletaCor === 'vermelho' ? 'border-red-700' : 'border-blue-700';
+
+    // Calcular descartes por componente (só quando todos submeteram)
+    const descAcuracia = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'acuracia') : { max: null, min: null };
+    const descApresentacao = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'apresentacao') : { max: null, min: null };
+    const descTecnica = todosSubmeteram ? calcularDescartes(scoresRecebidos, 'habilidade_tecnica') : { max: null, min: null };
+
+    const isDescartadoAcuracia = (val) => val != null && descAcuracia.max != null && (val === descAcuracia.max || val === descAcuracia.min);
+    const isDescartadoApresentacao = (val) => val != null && descApresentacao.max != null && (val === descApresentacao.max || val === descApresentacao.min);
+    const isDescartadoTecnica = (val) => val != null && descTecnica.max != null && (val === descTecnica.max || val === descTecnica.min);
+
+    return (
+      <div className={`min-h-screen bg-gradient-to-br ${corBg} text-white flex flex-col select-none`}>
+        {/* Header */}
+        <div className="bg-black/60 py-4 px-8 flex justify-between items-center border-b-2 border-gray-700">
+          <div className={`px-5 py-2 rounded-full border-2 ${corBorder} bg-black/40`}>
+            <p className={`${corText} text-xl font-black tracking-widest`}>
+              {atletaCor === 'vermelho' ? '🔴 CHONG' : '🔵 HONG'} — COLETANDO NOTAS
+            </p>
+          </div>
+          <p className="text-gray-300 font-bold">{luta.nome_categoria}</p>
+          <img src={omegaLogo} alt="Logo" className="h-10 opacity-50" />
+        </div>
+
+        {/* Atleta */}
+        <div className="text-center py-6">
+          <h2 className="text-5xl font-black text-white">{atletaNome}</h2>
+          <p className={`${corText} text-lg font-bold mt-1`}>{match.forma_designada || luta.poomsae_1}</p>
+        </div>
+
+        {/* Tabela de notas */}
+        <div className="flex-1 flex items-center justify-center px-8 pb-8">
+          <div className="w-full max-w-4xl">
+            {/* Cabeçalho da tabela */}
+            <div className="grid grid-cols-4 gap-3 mb-3">
+              <div className="text-gray-400 font-black text-sm tracking-widest text-center">ÁRBITRO</div>
+              <div className="text-gray-400 font-black text-sm tracking-widest text-center">ACCURACY</div>
+              <div className="text-gray-400 font-black text-sm tracking-widest text-center">PRESENTATION</div>
+              <div className="text-gray-400 font-black text-sm tracking-widest text-center">TÉCNICA</div>
+            </div>
+
+            {/* Linhas de árbitros */}
+            {Array.from({ length: numJuizes }, (_, i) => {
+              const juizNum = i + 1;
+              const score = scoresRecebidos.find(s => s.numero_juiz === juizNum);
+              const submeteu = !!score;
+              const mostrarValores = todosSubmeteram && submeteu;
+
+              const acVal = score?.acuracia;
+              const apVal = score?.apresentacao;
+              const tecVal = score?.habilidade_tecnica;
+
+              return (
+                <div key={juizNum} className={`grid grid-cols-4 gap-3 mb-3 rounded-xl p-4 border ${submeteu ? 'bg-black/40 border-gray-600' : 'bg-black/20 border-gray-800'}`}>
+                  {/* Label */}
+                  <div className="flex items-center justify-center">
+                    <span className={`text-2xl font-black ${submeteu ? (todosSubmeteram ? 'text-white' : `${corText}`) : 'text-gray-600'}`}>
+                      L{juizNum}
+                      {submeteu && !todosSubmeteram && <span className="ml-2 text-green-400 text-sm">✓</span>}
+                    </span>
+                  </div>
+
+                  {/* Accuracy */}
+                  <div className="flex items-center justify-center">
+                    {!submeteu ? (
+                      <span className="text-gray-600 text-3xl font-black animate-pulse">—</span>
+                    ) : !todosSubmeteram ? (
+                      <span className={`text-3xl font-black ${corText}`}>4.0</span>
+                    ) : (
+                      <span className={`text-3xl font-black ${isDescartadoAcuracia(acVal) ? 'text-gray-500 line-through opacity-40' : 'text-white'}`}>
+                        {acVal?.toFixed(1) ?? '—'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Presentation */}
+                  <div className="flex items-center justify-center">
+                    {!submeteu ? (
+                      <span className="text-gray-600 text-3xl font-black animate-pulse">—</span>
+                    ) : !todosSubmeteram ? (
+                      <span className={`text-3xl font-black ${corText}`}>6.0</span>
+                    ) : (
+                      <span className={`text-3xl font-black ${isDescartadoApresentacao(apVal) ? 'text-gray-500 line-through opacity-40' : 'text-white'}`}>
+                        {apVal?.toFixed(1) ?? '—'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Técnica (Freestyle) */}
+                  <div className="flex items-center justify-center">
+                    {match.tipo_poomsae === 'Freestyle' ? (
+                      !submeteu ? (
+                        <span className="text-gray-600 text-3xl font-black animate-pulse">—</span>
+                      ) : !todosSubmeteram ? (
+                        <span className={`text-3xl font-black ${corText}`}>—</span>
+                      ) : (
+                        <span className={`text-3xl font-black ${isDescartadoTecnica(tecVal) ? 'text-gray-500 line-through opacity-40' : 'text-white'}`}>
+                          {tecVal?.toFixed(1) ?? '—'}
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-gray-700 text-xl">N/A</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Status */}
+            <div className="text-center mt-6">
+              {!todosSubmeteram ? (
+                <p className="text-yellow-400 text-xl font-black animate-pulse">
+                  ⏳ Aguardando {numJuizes - scoresRecebidos.length} árbitro(s)...
+                </p>
+              ) : (
+                <p className="text-green-400 text-xl font-black">✓ Todas as notas recebidas — Calculando...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ── TELA VERMELHA: CHONG apresentando ──────────────────────────────
