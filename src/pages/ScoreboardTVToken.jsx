@@ -348,7 +348,7 @@ function ScoreboardPoomsae({ luta }) {
     return () => clearInterval(iv);
   }, [matchColetando?._id]);
 
-  // Timer
+  // Timer: only counts after mesário presses play (timestamp_timer_iniciado set)
   React.useEffect(() => {
     if (!matchAtivo) {
       clearInterval(timerIntervalRef.current);
@@ -357,20 +357,29 @@ function ScoreboardPoomsae({ luta }) {
       activeMatchIdRef.current = null;
       return;
     }
-    if (matchAtivo._id === activeMatchIdRef.current) return;
-    activeMatchIdRef.current = matchAtivo._id;
     const limite = matchAtivo.tipo_poomsae === 'Freestyle' ? 100 : 90;
-    let remaining = limite;
-    if (matchAtivo.timestamp_inicio) {
-      const elapsed = Math.floor((Date.now() - new Date(matchAtivo.timestamp_inicio).getTime()) / 1000);
-      remaining = Math.max(0, limite - elapsed);
+    const tsStr = matchAtivo.timestamp_timer_iniciado;
+
+    if (!tsStr) {
+      // Mesário hasn't pressed play yet — show full time but don't count down
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+      setTimerSegundos(limite);
+      activeMatchIdRef.current = matchAtivo._id;
+      return;
     }
+
+    // Ensure timestamp is parsed as UTC (MongoDB returns without 'Z')
+    const ts = new Date(tsStr.endsWith('Z') ? tsStr : tsStr + 'Z');
+    const elapsed = Math.floor((Date.now() - ts.getTime()) / 1000);
+    const remaining = Math.max(0, limite - elapsed);
     setTimerSegundos(remaining);
     clearInterval(timerIntervalRef.current);
     timerIntervalRef.current = setInterval(() => {
       setTimerSegundos(prev => (prev !== null && prev > 0) ? prev - 1 : 0);
     }, 1000);
-  }, [matchAtivo?._id]);
+    activeMatchIdRef.current = matchAtivo._id;
+  }, [matchAtivo?._id, matchAtivo?.timestamp_timer_iniciado]);
 
   React.useEffect(() => () => clearInterval(timerIntervalRef.current), []);
 

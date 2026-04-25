@@ -96,10 +96,9 @@ export function JoystickPoomsae({ luta, usuario, ws, t, campId }) {
       }
     };
 
-    // Só inicia poll se o juiz ainda não submeteu (evita requests desnecessários)
-    if (submetido) return;
+    // Always poll — even after submitting — so a new match (Hong after Chong) is detected
     poll();
-    const interval = setInterval(poll, 15000); // 15s: WS já cobre tempo real
+    const interval = setInterval(poll, 5000);
     return () => clearInterval(interval);
   }, [luta?.id, submetido]);
 

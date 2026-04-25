@@ -52,6 +52,7 @@ export function MesarioPanel() {
   //              apresentando_azul | coletando_azul | resultado | encerrada
   const [poomsaeFlow, setPoomsaeFlow] = useState('aguardando');
   const poomsaeFlowRef = useRef('aguardando'); // keep ref in sync for WS handlers (avoids stale closure)
+  const timerIniciadoParaMatchRef = useRef(null); // tracks which matchId we already sent timer-iniciado for
   const [rodadaAtual, setRodadaAtual] = useState(1); // round 1 or 2 (when luta has poomsae_2)
   const [poomsaeMatchVermelho, setPoomsaeMatchVermelho] = useState(null); // {id, resultado}
   const [poomsaeMatchAzul, setPoomsaeMatchAzul] = useState(null);
@@ -641,6 +642,18 @@ Deseja RECUPERAR esta sessão?
     if (!novoEstado && lutaAtual?.modalidade === 'Poomsae') {
       console.log('⏸️ Pausando Poomsae - Carregando notas dos árbitros...');
       carregarStatusPoomsae();
+    }
+
+    // Quando INICIAR o timer pela primeira vez no Poomsae, registrar no backend
+    // para o Scoreboard sincronizar o cronômetro
+    if (novoEstado && lutaAtual?.modalidade === 'Poomsae') {
+      const matchId = poomsaeFlow === 'apresentando_vermelho' ? poomsaeMatchVermelho?.id
+                    : poomsaeFlow === 'apresentando_azul' ? poomsaeMatchAzul?.id
+                    : null;
+      if (matchId && timerIniciadoParaMatchRef.current !== matchId) {
+        timerIniciadoParaMatchRef.current = matchId;
+        fetch(`${API_BASE_URL}/api/poomsae/matches/${matchId}/timer-iniciado`, { method: 'POST' }).catch(() => {});
+      }
     }
   };
   
